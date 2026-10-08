@@ -38,6 +38,9 @@ def render_filter_battery(
     Render global search bar and dynamic typed filter battery.
     Returns: (list_of_filter_rules, global_search_term, global_search_columns)
     """
+    if not schema or not schema.columns:
+        return [], None, None
+
     if "filter_entries" not in st.session_state:
         st.session_state["filter_entries"] = []
 
@@ -82,8 +85,9 @@ def render_filter_battery(
     col_btn_add, col_btn_clear, _ = st.columns([1.5, 1.5, 5])
     with col_btn_add:
         if st.button("➕ Aggiungi Filtro", use_container_width=True):
+            first_col_name = schema.columns[0].name if schema.columns else ""
             st.session_state["filter_entries"].append({
-                "column": schema.columns[0].name,
+                "column": first_col_name,
                 "operator": FilterOperator.CONTAINS.value,
                 "value": "",
                 "value_to": "",
@@ -105,13 +109,17 @@ def render_filter_battery(
     col_display_by_name = {c.name: f"{get_type_icon(c.data_type)} {c.name}" for c in schema.columns}
 
     # Render each filter row
+    first_col_name = schema.columns[0].name if schema.columns else ""
     for idx, entry in enumerate(st.session_state["filter_entries"]):
-        current_col = entry.get("column", schema.columns[0].name)
+        current_col = entry.get("column") or first_col_name
         if current_col not in column_map:
-            current_col = schema.columns[0].name
+            current_col = first_col_name
             entry["column"] = current_col
             entry["value"] = ""
             entry["value_to"] = ""
+
+        if not current_col or current_col not in column_map:
+            continue
 
         meta = column_map[current_col]
         dtype = meta.data_type
@@ -125,11 +133,13 @@ def render_filter_battery(
 
             # Select Column
             with f_cols[0]:
-                curr_display = col_display_by_name.get(current_col, col_display_options[0])
+                fallback_display = col_display_options[0] if col_display_options else ""
+                curr_display = col_display_by_name.get(current_col, fallback_display)
+                curr_idx = col_display_options.index(curr_display) if curr_display in col_display_options else 0
                 sel_display = st.selectbox(
                     "Colonna",
                     options=col_display_options,
-                    index=col_display_options.index(curr_display),
+                    index=curr_idx,
                     key=f"col_sel_{idx}",
                 )
                 selected_col_name = col_name_by_display[sel_display]
@@ -186,6 +196,17 @@ def render_filter_battery(
         for idx in sorted(entries_to_delete, reverse=True):
             del st.session_state["filter_entries"][idx]
         st.rerun()
+    # Proactively reset pagination to page 1 whenever search criteria change
+    search_sig = (
+        str(global_search.strip() if global_search else ""),
+        tuple(sorted(search_cols or [])),
+        tuple((r.column, r.operator.value, str(r.value), str(r.value_to)) for r in filter_rules),
+    )
+    if st.session_state.get("_prev_filter_signature") != search_sig:
+        st.session_state["_prev_filter_signature"] = search_sig
+        st.session_state["current_page"] = 1
+        if "page_num_input" in st.session_state:
+            st.session_state["page_num_input"] = 1
 
     return filter_rules, global_search.strip() or None, search_cols or None
 

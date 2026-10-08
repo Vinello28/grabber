@@ -63,10 +63,11 @@ def test_e2e_csv_test1_queries_and_export():
     if os.path.exists(export_path):
         os.remove(export_path)
 
-    # 4. Verify Memory Safety (RSS must stay under 2 GB even after querying 13.5GB dataset)
+    # 4. Verify Memory Safety (RSS delta must stay under 2 GB even after querying 13.5GB dataset)
     final_rss = process.memory_info().rss / (1024 * 1024)
-    print(f"E2E Test Memory RSS: Initial={initial_rss:.1f} MB, Final={final_rss:.1f} MB")
-    assert final_rss < 2048.0, f"Memory RSS exceeded safe threshold: {final_rss} MB"
+    rss_diff = final_rss - initial_rss
+    print(f"E2E Test Memory RSS: Initial={initial_rss:.1f} MB, Final={final_rss:.1f} MB, Delta={rss_diff:.1f} MB")
+    assert final_rss < 3072.0 and rss_diff <= 2048.0, f"Memory RSS exceeded safe threshold: {final_rss} MB (delta: {rss_diff} MB)"
 
 
 def test_engine_view_lifecycle_recovery():

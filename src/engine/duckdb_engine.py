@@ -75,6 +75,23 @@ class DuckDBEngine(IQueryEngine):
 
     def ensure_view_exists(self) -> None:
         """Ensure current_dataset view exists, recreating it if necessary."""
+        if self.current_sql_source is None:
+            if self.current_schema and self.current_schema.source_format == "xml":
+                raise RuntimeError(
+                    "Il dataset XML non è ancora indicizzato in cache Parquet. "
+                    "Fai clic su '⚡ Indicizza XML in Parquet' nella barra laterale per abilitare le interrogazioni."
+                )
+            if self.current_dataset_path:
+                self.connect_dataset(self.current_dataset_path)
+                if self.current_sql_source is None:
+                    raise RuntimeError(
+                        f"Impossibile creare una vista SQL per il dataset: {self.current_dataset_path}"
+                    )
+                return
+            raise RuntimeError(
+                "Nessun dataset attivo caricato nel motore. Seleziona e carica un dataset prima di eseguire query."
+            )
+
         if self.has_active_view():
             return
 
@@ -82,10 +99,6 @@ class DuckDBEngine(IQueryEngine):
             self.conn.execute(
                 f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {self.current_sql_source}"
             )
-            return
-
-        if self.current_dataset_path:
-            self.connect_dataset(self.current_dataset_path)
             return
 
         raise RuntimeError(
@@ -112,7 +125,7 @@ class DuckDBEngine(IQueryEngine):
             self.current_schema = self.xml_adapter.inspect_schema(files, self.conn)
             cache_path = self.xml_adapter.get_cache_path(files)
             if cache_path.exists() and any(cache_path.glob("**/*.parquet")):
-                sql_source = f"read_parquet('{str(cache_path)}/**/*.parquet')"
+                sql_source = f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
             else:
                 # Store files on schema for potential conversion
                 sql_source = None
@@ -120,6 +133,11 @@ class DuckDBEngine(IQueryEngine):
             raise ValueError(f"Unsupported format '{fmt}' in path: {path}")
 
         self.current_sql_source = sql_source
+
+        # Ensure schema source_path and stats strictly reflect the requested path
+        self.current_schema.source_path = path
+        self.current_schema.file_count = len(files)
+        self.current_schema.total_size_bytes = analysis["total_size_bytes"]
 
         if sql_source:
             self.conn.execute(f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {sql_source}")
@@ -133,26 +151,36 @@ class DuckDBEngine(IQueryEngine):
                         self.current_schema.row_count_estimate = count_res[0]
                 except Exception:
                     pass
+        else:
+            self.conn.execute(f"DROP VIEW IF EXISTS {self.current_view_name}")
 
         return self.current_schema
 
     def index_xml_dataset(
         self,
         progress_callback: Optional[Callable[[float, int, int], None]] = None,
+        clean_cache: bool = False,
     ) -> None:
         """Convert current XML dataset to cached Parquet files and register view."""
         if not self.current_schema or self.current_schema.source_format != "xml":
             raise ValueError("Current dataset is not an XML dataset.")
 
-        analysis = DatasetDetector.analyze_path(self.current_schema.source_path)
+        dataset_path = self.current_dataset_path or self.current_schema.source_path
+        analysis = DatasetDetector.analyze_path(dataset_path)
         files = analysis["files"]
+
+        cache_dir = self.xml_adapter.get_cache_path(files)
+        if clean_cache and cache_dir.exists():
+            import shutil
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
         cache_dir = self.xml_adapter.convert_to_parquet_streaming(
             files,
+            output_dir=cache_dir,
             progress_callback=progress_callback,
         )
 
-        sql_source = f"read_parquet('{str(cache_dir)}/**/*.parquet')"
+        sql_source = f"read_parquet('{str(cache_dir)}/**/*.parquet', union_by_name=true)"
         self.current_sql_source = sql_source
         self.conn.execute(f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {sql_source}")
         self.current_schema.table_identifier = self.current_view_name
@@ -160,6 +188,22 @@ class DuckDBEngine(IQueryEngine):
         count_res = self.conn.execute(f"SELECT COUNT(*) FROM {self.current_view_name}").fetchone()
         if count_res:
             self.current_schema.row_count_estimate = count_res[0]
+
+        # Update current schema column metadata with full unified schema
+        try:
+            describe_df = self.conn.execute(f"DESCRIBE {self.current_view_name}").fetchdf()
+            new_columns = []
+            for _, row in describe_df.iterrows():
+                col_name = str(row["column_name"])
+                native_type = str(row["column_type"]).upper()
+                is_num = any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                data_type = DataType.NUMERIC if is_num else (
+                    DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
+                )
+                new_columns.append(ColumnMeta(name=col_name, data_type=data_type, native_type=native_type))
+            self.current_schema.columns = new_columns
+        except Exception:
+            pass
 
     def execute_query(self, spec: QuerySpec) -> QueryResult:
         """Execute query specification and return tabular results."""

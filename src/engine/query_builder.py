@@ -42,21 +42,35 @@ class QueryBuilder:
 
         # 1. Global Search
         if spec.global_search and spec.global_search.strip():
-            term = cls.escape_str_literal(spec.global_search.strip().lower())
-            search_cols = spec.global_search_columns
-            if not search_cols and schema_columns:
-                # Default to all text/categorical columns
-                search_cols = [
-                    c.name for c in schema_columns
-                    if c.data_type in (DataType.TEXT, DataType.CATEGORICAL, DataType.UNKNOWN)
-                ]
+            raw_term = spec.global_search.strip().strip('"\'“”‘’«»`').strip()
+            if raw_term:
+                search_cols = spec.global_search_columns
+                if not search_cols and schema_columns:
+                    # Default to all text/categorical columns
+                    search_cols = [
+                        c.name for c in schema_columns
+                        if c.data_type in (DataType.TEXT, DataType.CATEGORICAL, DataType.UNKNOWN)
+                    ]
 
-            if search_cols:
-                col_predicates = [
-                    f"LOWER(CAST({cls.quote_ident(c)} AS VARCHAR)) LIKE '%{term}%'"
-                    for c in search_cols
-                ]
-                predicates.append(f"({' OR '.join(col_predicates)})")
+                if search_cols:
+                    words = [w for w in raw_term.split() if w]
+                    if len(words) > 1:
+                        col_predicates = []
+                        for c in search_cols:
+                            c_sql = cls.quote_ident(c)
+                            c_words = [
+                                f"LOWER(CAST({c_sql} AS VARCHAR)) LIKE '%{cls.escape_str_literal(w.lower())}%'"
+                                for w in words
+                            ]
+                            col_predicates.append(f"({' AND '.join(c_words)})")
+                        predicates.append(f"({' OR '.join(col_predicates)})")
+                    else:
+                        term = cls.escape_str_literal(raw_term.lower())
+                        col_predicates = [
+                            f"LOWER(CAST({cls.quote_ident(c)} AS VARCHAR)) LIKE '%{term}%'"
+                            for c in search_cols
+                        ]
+                        predicates.append(f"({' OR '.join(col_predicates)})")
 
         # 2. Dynamic Column Filters
         col_type_map = {c.name: c for c in schema_columns} if schema_columns else {}
@@ -95,24 +109,33 @@ class QueryBuilder:
         if val is None or (isinstance(val, str) and not val.strip()):
             return None
 
+        # Clean string value: strip outer quotes and whitespace for robust text queries
+        clean_val = str(val).strip().strip('"\'“”‘’«»`').strip()
+        if not clean_val:
+            return None
+
         # Text matching
         if op == FilterOperator.CONTAINS:
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
+            words = [w for w in clean_val.split() if w]
+            if len(words) > 1 and not f.case_sensitive:
+                word_preds = [f"{base} LIKE '%{cls.escape_str_literal(w.lower())}%'" for w in words]
+                return f"({' AND '.join(word_preds)})"
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             return f"{base} LIKE '%{esc}%'"
 
         if op == FilterOperator.NOT_CONTAINS:
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
             return f"({col_sql} IS NULL OR {base} NOT LIKE '%{esc}%')"
 
         if op == FilterOperator.STARTS_WITH:
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
             return f"{base} LIKE '{esc}%'"
 
         if op == FilterOperator.ENDS_WITH:
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
             return f"{base} LIKE '%{esc}'"
 
@@ -123,7 +146,7 @@ class QueryBuilder:
                     return f"TRY_CAST({col_sql} AS DOUBLE) = {num_val}"
                 except ValueError:
                     pass
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
             return f"{base} = '{esc}'"
 
@@ -134,12 +157,12 @@ class QueryBuilder:
                     return f"(TRY_CAST({col_sql} AS DOUBLE) != {num_val} OR {col_sql} IS NULL)"
                 except ValueError:
                     pass
-            esc = cls.escape_str_literal(val.lower() if not f.case_sensitive else val)
+            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
             return f"({col_sql} IS NULL OR {base} != '{esc}')"
 
         if op == FilterOperator.REGEX:
-            esc = cls.escape_str_literal(val)
+            esc = cls.escape_str_literal(str(val).strip())
             flags = "" if f.case_sensitive else "(?i)"
             return f"regexp_matches(CAST({col_sql} AS VARCHAR), '{flags}{esc}')"
 

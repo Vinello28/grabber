@@ -168,34 +168,80 @@ class XmlAdapter(IDatasetAdapter):
         """
         cache_path = self.get_cache_path(path_or_files)
         if cache_path.exists():
-            return f"read_parquet('{str(cache_path)}/**/*.parquet')"
+            return f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
         raise RuntimeError("XML dataset must be indexed/cached to Parquet for direct SQL query execution.")
 
     def get_cache_path(self, path_or_files: Any) -> Path:
         """Derive cache directory for an XML dataset based on hash of paths."""
         import hashlib
         if isinstance(path_or_files, list):
-            path_repr = "|".join(sorted(path_or_files))
+            path_repr = "|".join(sorted(str(Path(p).resolve()) for p in path_or_files))
         else:
-            path_repr = str(path_or_files)
+            path_repr = str(Path(path_or_files).resolve())
         path_hash = hashlib.md5(path_repr.encode("utf-8")).hexdigest()[:12]
         return self._cache_dir / f"xml_{path_hash}"
 
     def inspect_schema(self, path_or_files: Any, duckdb_conn: duckdb.DuckDBPyConnection) -> DatasetSchema:
         """
-        Inspect XML schema by streaming a sample of records from the first XML file.
+        Inspect XML schema. If Parquet cache exists, inspects unified columnar schema
+        with union_by_name=true. Otherwise streams sample records from the first XML file.
         Fast and uses < 25MB of RAM.
         """
         if isinstance(path_or_files, list):
             sample_file = path_or_files[0]
             file_count = len(path_or_files)
             total_size = sum(os.path.getsize(f) for f in path_or_files)
-            source_path = os.path.dirname(sample_file) if file_count > 1 else sample_file
+            source_path = os.path.commonpath(path_or_files) if file_count > 1 else sample_file
         else:
             sample_file = path_or_files
             file_count = 1
             total_size = os.path.getsize(sample_file)
             source_path = sample_file
+
+        cache_path = self.get_cache_path(path_or_files)
+        has_cache = cache_path.exists() and any(cache_path.glob("**/*.parquet"))
+
+        # If already indexed, retrieve rich unified schema directly from Parquet files
+        if has_cache:
+            sql_source = f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
+            try:
+                describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
+                sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+                count_res = duckdb_conn.execute(f"SELECT COUNT(*) FROM {sql_source}").fetchone()
+                total_rows = count_res[0] if count_res else None
+
+                columns: List[ColumnMeta] = []
+                for _, row in describe_df.iterrows():
+                    col_name = str(row["column_name"])
+                    native_type = str(row["column_type"]).upper()
+                    is_num = any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                    data_type = DataType.NUMERIC if is_num else (
+                        DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
+                    )
+                    sample_vals = []
+                    if col_name in sample_df:
+                        sample_vals = [v for v in sample_df[col_name].dropna().unique()[:5].tolist()]
+
+                    columns.append(
+                        ColumnMeta(
+                            name=col_name,
+                            data_type=data_type,
+                            native_type=native_type,
+                            sample_values=sample_vals,
+                        )
+                    )
+
+                return DatasetSchema(
+                    source_path=source_path,
+                    source_format="xml",
+                    columns=columns,
+                    row_count_estimate=total_rows,
+                    total_size_bytes=total_size,
+                    file_count=file_count,
+                    table_identifier=sql_source,
+                )
+            except Exception:
+                pass  # Fallback to XML sampling if cache is partially invalid
 
         target_tag = self.detect_record_tag(sample_file)
         sample_records = list(self.iter_records(sample_file, target_tag=target_tag, max_records=200))
@@ -231,9 +277,6 @@ class XmlAdapter(IDatasetAdapter):
         avg_record_bytes = max(100, int(os.path.getsize(sample_file) / (len(sample_records) * 3 + 1)))
         estimated_rows = int(total_size / avg_record_bytes) if avg_record_bytes > 0 else None
 
-        cache_path = self.get_cache_path(path_or_files)
-        has_cache = cache_path.exists() and any(cache_path.glob("**/*.parquet"))
-
         return DatasetSchema(
             source_path=source_path,
             source_format="xml",
@@ -241,7 +284,7 @@ class XmlAdapter(IDatasetAdapter):
             row_count_estimate=estimated_rows,
             total_size_bytes=total_size,
             file_count=file_count,
-            table_identifier="xml_source" if not has_cache else f"read_parquet('{str(cache_path)}/**/*.parquet')",
+            table_identifier="xml_source",
         )
 
     def _infer_field_type(self, name: str, samples: List[Any]) -> DataType:
@@ -273,10 +316,12 @@ class XmlAdapter(IDatasetAdapter):
         output_dir: Optional[Path] = None,
         chunk_size: int = 50000,
         progress_callback: Optional[Callable[[float, int, int], None]] = None,
+        max_workers: Optional[int] = None,
     ) -> Path:
         """
         Convert XML files to partitioned Parquet files in streaming batches.
-        Keeps RAM usage strictly bounded while processing any size (including 62 GB).
+        Uses multi-process parallelism (cores - 2) for maximum throughput
+        while maintaining strictly bounded flat RAM usage per worker.
         """
         if output_dir is None:
             output_dir = self.get_cache_path(files)
@@ -287,29 +332,64 @@ class XmlAdapter(IDatasetAdapter):
         total_rows_converted = 0
 
         target_tag = self.detect_record_tag(files[0])
+        output_dir_str = str(output_dir)
 
-        for file_idx, fpath in enumerate(files):
-            file_size = os.path.getsize(fpath)
-            batch: List[Dict[str, Any]] = []
-            part_idx = 0
+        # Worker count: cores of the machine minus 2 (at least 1)
+        if max_workers is None:
+            cpu_total = os.cpu_count() or 4
+            max_workers = max(1, cpu_total - 2)
 
-            for record in self.iter_records(fpath, target_tag=target_tag):
-                batch.append(record)
-                if len(batch) >= chunk_size:
-                    self._write_parquet_batch(batch, output_dir, file_idx, part_idx)
-                    total_rows_converted += len(batch)
-                    batch = []
-                    part_idx += 1
+        # Sequential processing for single-file or 1 worker
+        if len(files) == 1 or max_workers <= 1:
+            for file_idx, fpath in enumerate(files):
+                file_size, rows = _convert_single_xml_worker(
+                    fpath, file_idx, output_dir_str, target_tag, chunk_size
+                )
+                processed_bytes += file_size
+                total_rows_converted += rows
+                if progress_callback:
+                    frac = min(1.0, processed_bytes / total_bytes) if total_bytes > 0 else 1.0
+                    progress_callback(frac, processed_bytes, total_rows_converted)
+            return output_dir
 
-            if batch:
-                self._write_parquet_batch(batch, output_dir, file_idx, part_idx)
-                total_rows_converted += len(batch)
-                batch = []
+        # Multi-process parallel conversion across workers
+        try:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
 
-            processed_bytes += file_size
-            if progress_callback:
-                frac = min(1.0, processed_bytes / total_bytes) if total_bytes > 0 else 1.0
-                progress_callback(frac, processed_bytes, total_rows_converted)
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _convert_single_xml_worker,
+                        fpath,
+                        file_idx,
+                        output_dir_str,
+                        target_tag,
+                        chunk_size,
+                    ): fpath
+                    for file_idx, fpath in enumerate(files)
+                }
+
+                for future in as_completed(futures):
+                    file_size, rows = future.result()
+                    processed_bytes += file_size
+                    total_rows_converted += rows
+                    if progress_callback:
+                        frac = min(1.0, processed_bytes / total_bytes) if total_bytes > 0 else 1.0
+                        progress_callback(frac, processed_bytes, total_rows_converted)
+
+        except Exception:
+            # Resilient fallback: sequential execution if process pool encounters environment issues
+            processed_bytes = 0
+            total_rows_converted = 0
+            for file_idx, fpath in enumerate(files):
+                file_size, rows = _convert_single_xml_worker(
+                    fpath, file_idx, output_dir_str, target_tag, chunk_size
+                )
+                processed_bytes += file_size
+                total_rows_converted += rows
+                if progress_callback:
+                    frac = min(1.0, processed_bytes / total_bytes) if total_bytes > 0 else 1.0
+                    progress_callback(frac, processed_bytes, total_rows_converted)
 
         return output_dir
 
@@ -326,3 +406,37 @@ class XmlAdapter(IDatasetAdapter):
         table = pa.Table.from_pandas(df)
         out_file = output_dir / f"part_{file_idx:04d}_{part_idx:04d}.parquet"
         pq.write_table(table, out_file, compression="zstd")
+
+
+def _convert_single_xml_worker(
+    fpath: str,
+    file_idx: int,
+    output_dir_str: str,
+    target_tag: str,
+    chunk_size: int = 50000,
+) -> Tuple[int, int]:
+    """
+    Independent worker function for multi-process XML-to-Parquet conversion.
+    Parses a single XML file in streaming fashion and writes Parquet parts.
+    Returns: (file_size_bytes, total_rows_converted)
+    """
+    adapter = XmlAdapter()
+    output_dir = Path(output_dir_str)
+    file_size = os.path.getsize(fpath)
+    total_rows = 0
+    part_idx = 0
+    batch: List[Dict[str, Any]] = []
+
+    for record in adapter.iter_records(fpath, target_tag=target_tag):
+        batch.append(record)
+        if len(batch) >= chunk_size:
+            adapter._write_parquet_batch(batch, output_dir, file_idx, part_idx)
+            total_rows += len(batch)
+            batch = []
+            part_idx += 1
+
+    if batch:
+        adapter._write_parquet_batch(batch, output_dir, file_idx, part_idx)
+        total_rows += len(batch)
+
+    return file_size, total_rows

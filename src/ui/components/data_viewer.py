@@ -108,14 +108,34 @@ def render_data_viewer(
         try:
             result = engine.execute_query(spec)
         except Exception as e:
-            st.error(f"Errore durante l'esecuzione della query: {e}")
+            if schema.source_format == "xml" and engine.current_sql_source is None:
+                st.info(
+                    "ℹ️ **Dataset XML non ancora indicizzato**: per consultare e filtrare i record, "
+                    "avvia la conversione streaming cliccando su **'⚡ Indicizza XML in Parquet'** nella barra laterale."
+                )
+            else:
+                st.error(f"Errore durante l'esecuzione della query: {e}")
             return
 
     total_rows = result.total_matching_rows
     total_pages = max(1, (total_rows + page_size - 1) // page_size)
+
+    # Offset recovery: if current page exceeds matching rows or rows returned empty while total_rows > 0
+    if (current_page > total_pages or len(result.rows) == 0) and total_rows > 0 and offset > 0:
+        current_page = 1
+        st.session_state["current_page"] = 1
+        st.session_state["page_num_input"] = 1
+        spec.offset = 0
+        try:
+            result = engine.execute_query(spec)
+        except Exception as e:
+            st.error(f"Errore durante il recupero dei dati: {e}")
+            return
+
     if current_page > total_pages:
         current_page = 1
         st.session_state["current_page"] = 1
+        st.session_state["page_num_input"] = 1
 
     # Status banner
     st.info(
@@ -131,16 +151,24 @@ def render_data_viewer(
     else:
         st.warning("Nessun record trovato con i filtri correnti.")
 
+    # Defensively sync page_num_input in session_state with total_pages
+    if "page_num_input" in st.session_state and st.session_state["page_num_input"] > total_pages:
+        st.session_state["page_num_input"] = current_page
+
     # Pagination navigation bar
     nav_c1, nav_c2, nav_c3, nav_c4 = st.columns([1, 1, 2, 2])
     with nav_c1:
         if st.button("⬅️ Precedente", disabled=(current_page <= 1), use_container_width=True):
-            st.session_state["current_page"] = max(1, current_page - 1)
+            new_p = max(1, current_page - 1)
+            st.session_state["current_page"] = new_p
+            st.session_state["page_num_input"] = new_p
             st.rerun()
 
     with nav_c2:
         if st.button("Successiva ➡️", disabled=(current_page >= total_pages), use_container_width=True):
-            st.session_state["current_page"] = min(total_pages, current_page + 1)
+            new_p = min(total_pages, current_page + 1)
+            st.session_state["current_page"] = new_p
+            st.session_state["page_num_input"] = new_p
             st.rerun()
 
     with nav_c3:

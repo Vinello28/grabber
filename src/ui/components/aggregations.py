@@ -128,7 +128,13 @@ def render_aggregations(
                         else:
                             st.info("Nessun dato per i parametri specificati.")
                     except Exception as e:
-                        st.error(f"Errore durante l'aggregazione: {e}")
+                        if schema.source_format == "xml" and engine.current_sql_source is None:
+                            st.info(
+                                "ℹ️ **Dataset XML non ancora indicizzato**: per calcolare raggruppamenti e aggregazioni, "
+                                "avvia la conversione streaming cliccando su **'⚡ Indicizza XML in Parquet'** nella barra laterale."
+                            )
+                        else:
+                            st.error(f"Errore durante l'aggregazione: {e}")
 
     # 2. DISTINCT TAB
     with tab_distinct:

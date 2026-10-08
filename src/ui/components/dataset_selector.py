@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 from src.engine.duckdb_engine import DuckDBEngine
 from src.core.models import DatasetSchema
+from src.adapters.detector import DatasetDetector
 from src.ui.file_picker import pick_system_folder, pick_system_file
 from src.ui.state_manager import reset_dataset_ui_state
 
@@ -90,24 +91,45 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
 
     if schema:
         # Check XML indexing status
-        if schema.source_format == "xml" and schema.table_identifier == "xml_source":
-            st.sidebar.warning(
-                "⚠️ Dataset XML rilevato. Per abilitare query analitiche interattive ad alte prestazioni, "
-                "è consigliata l'indicizzazione streaming in cache Parquet."
-            )
-            if st.sidebar.button("⚡ Indicizza XML in Parquet (Streaming)", type="primary"):
-                progress_bar = st.sidebar.progress(0.0)
-                status_text = st.sidebar.empty()
+        if schema.source_format == "xml":
+            analysis = DatasetDetector.analyze_path(schema.source_path)
+            total_xml_files = len(analysis["files"])
+            cache_path = engine.xml_adapter.get_cache_path(analysis["files"])
 
-                def on_progress(frac: float, bytes_done: int, rows_done: int):
-                    progress_bar.progress(frac)
-                    mb_done = bytes_done / (1024 * 1024)
-                    status_text.caption(f"Elaborati: {mb_done:.1f} MB | {rows_done:,} record")
+            existing_parts = set()
+            if cache_path.exists():
+                for pf in cache_path.glob("**/*.parquet"):
+                    try:
+                        part_num = int(pf.name.split("_")[1])
+                        existing_parts.add(part_num)
+                    except (IndexError, ValueError):
+                        pass
 
-                with st.spinner("Conversione streaming in corso..."):
-                    engine.index_xml_dataset(progress_callback=on_progress)
-                st.sidebar.success("Indicizzazione completata!")
-                st.rerun()
+            indexed_count = len(existing_parts)
+            is_fully_indexed = (indexed_count >= total_xml_files and total_xml_files > 0)
+
+            if not is_fully_indexed:
+                if indexed_count > 0:
+                    st.sidebar.warning(
+                        f"⚠️ **Indicizzazione parziale**: trovati {indexed_count} su {total_xml_files} file convertiti. "
+                        "Riavvia per completare l'indicizzazione su tutti i file."
+                    )
+                    btn_label = f"⚡ Riavvia / Completa Indicizzazione ({indexed_count}/{total_xml_files} file)"
+                else:
+                    st.sidebar.warning(
+                        "⚠️ **Dataset XML non indicizzato**. Per abilitare query analitiche interattive ad alte prestazioni, "
+                        "è richiesta l'indicizzazione streaming in cache Parquet."
+                    )
+                    btn_label = "⚡ Indicizza XML in Parquet (Multi-Core)"
+
+                if st.sidebar.button(btn_label, type="primary", use_container_width=True):
+                    _run_xml_indexing(engine, schema, clean_cache=(indexed_count > 0))
+            else:
+                st.sidebar.success(f"⚡ **Cache Parquet attiva**: {total_xml_files}/{total_xml_files} file indicizzati.")
+                with st.sidebar.expander("🔄 Re-indicizza / Aggiorna Cache XML", expanded=False):
+                    st.caption("Usa questo pulsante per rigenerare la cache Parquet da zero.")
+                    if st.button("Riavvia indicizzazione XML da zero", key="btn_reindex_xml", use_container_width=True):
+                        _run_xml_indexing(engine, schema, clean_cache=True)
 
         # Display metadata card
         st.sidebar.markdown("---")
@@ -124,3 +146,25 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
 
     st.sidebar.divider()
     return schema
+
+
+def _run_xml_indexing(engine: DuckDBEngine, schema: DatasetSchema, clean_cache: bool = False) -> None:
+    """Run parallel streaming XML conversion with real-time UI progress updates."""
+    progress_bar = st.sidebar.progress(0.0)
+    status_text = st.sidebar.empty()
+    total_mb = (schema.total_size_bytes or 0) / (1024 * 1024)
+
+    def on_progress(frac: float, bytes_done: int, rows_done: int):
+        progress_bar.progress(min(1.0, frac))
+        mb_done = bytes_done / (1024 * 1024)
+        if total_mb > 0:
+            status_text.caption(
+                f"Elaborati: {mb_done:.1f} MB di {total_mb:.1f} MB ({frac * 100:.1f}%) | {rows_done:,} record"
+            )
+        else:
+            status_text.caption(f"Elaborati: {mb_done:.1f} MB | {rows_done:,} record")
+
+    with st.spinner("Conversione streaming multi-core in corso..."):
+        engine.index_xml_dataset(progress_callback=on_progress, clean_cache=clean_cache)
+    st.sidebar.success("Indicizzazione completata con successo!")
+    st.rerun()

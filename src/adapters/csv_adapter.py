@@ -96,7 +96,7 @@ class CsvAdapter(IDatasetAdapter):
             sample_file = path_or_files[0]
             file_count = len(path_or_files)
             total_size = sum(os.path.getsize(f) for f in path_or_files)
-            source_path = os.path.dirname(sample_file) if file_count > 1 else sample_file
+            source_path = os.path.commonpath(path_or_files) if file_count > 1 else sample_file
         else:
             sample_file = path_or_files
             file_count = 1

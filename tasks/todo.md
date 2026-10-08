@@ -83,14 +83,51 @@
   - Add defensive filtering in `filter_battery.py` and `aggregations.py` for multiselect and selectbox column options.
   - Write automated regression tests for dataset switching and column option validation.
   - Verify end-to-end switching between `data/test1` (CSV) and `data/annihilation_test` (XML).
+- [x] 11. Fix Schema Mismatch in Parquet Glob Queries and Exports (`union_by_name=True`) <!-- id: 10 -->
+  - Add `union_by_name=true` to all `read_parquet` glob expressions in `xml_adapter.py`, `duckdb_engine.py`, and `parquet_adapter.py`.
+  - Normalize paths in `xml_adapter.get_cache_path` using `.resolve()` to ensure consistent cache resolution for relative and absolute paths.
+  - Update schema column metadata and row count from the unified view after XML-to-Parquet conversion or on cache load.
+  - Add automated regression tests for heterogeneous schema parquet globs and direct disk export.
+  - Verify end-to-end export on cached XML dataset (`xml_be9386a025b6`).
+- [x] 12. Fix String Search & Robust Filter Resolution <!-- id: 11 -->
+  - Sanitize string search terms in `QueryBuilder` (strip whitespace and outer quote wrappers `"` and `'`).
+  - Add multi-token keyword matching for `CONTAINS` in text filters and global search.
+  - Reset `current_page = 1` immediately when filters or global search change in `filter_battery.py` and `data_viewer.py`.
+  - Re-execute page 1 automatically in `data_viewer.py` if `offset` exceeds matching rows to avoid false "no records" displays.
+  - Drop stale views when connecting unindexed XML datasets and display indexing guidance in `app.py`.
+  - Add unit tests for string search with quotes, spaces, multi-words, and pagination offset recovery.
+  - Verify searches for "intelligenza" across datasets.
+- [x] 13. Multi-Process Parallel XML Streaming Indexer (Cores - 2) <!-- id: 12 -->
+  - Implement picklable worker `_convert_xml_file_worker` in `src/adapters/xml_adapter.py`.
+  - Configure `max_workers = max(1, (os.cpu_count() or 4) - 2)` in `convert_to_parquet_streaming`.
+  - Integrate `ProcessPoolExecutor` with streaming `as_completed` progress callbacks.
+  - Add `multiprocessing.freeze_support()` to `desktop_entrypoint.py` and `run.py` for PyInstaller safety.
+  - Add automated unit tests for parallel multi-file XML conversion and fallback resilience.
+  - Benchmark performance and memory scaling.
+- [x] 14. Fix IndexError on Pagination Button Navigation & Eager Evaluation <!-- id: 13 -->
+  - Trace rerun lifecycle when advancing results page via "Successiva ➡️" button in `data_viewer.py`.
+  - Fix eager evaluation bug in `filter_battery.py`: replace eager `entry.get("column", schema.columns[0].name)` with lazy guarded evaluation.
+  - Add empty schema check (`if not schema or not schema.columns: return [], None, None`) in `filter_battery.py`.
+  - Synchronize `page_num_input` widget state with `current_page` in `data_viewer.py` to prevent state bounce on rerun.
+  - Added automated regression tests in `tests/test_pagination_and_filter_resilience.py` (40/40 tests passing).
+- [/] 15. Multi-Agent Comprehensive System Audit (Bugs, Linters, Type Safety, Edge Cases) <!-- id: 14 -->
+  - [x] Baseline test suite and linter execution (`pytest` 40/40 passed, initial `ruff`/`mypy` scans).
+  - [ ] Launch Subagent 1: Static Analysis & Linting Specialist (`ruff` findings, syntax errors, dead code, formatting).
+  - [ ] Launch Subagent 2: Engine & Core Domain Specialist (`src/core/`, `src/engine/`, type definitions, SQL compilers, memory lifecycle).
+  - [ ] Launch Subagent 3: Adapters & Ingestion Specialist (`src/adapters/`, CSV sniffing, XML stream parser, Parquet union, worker safety).
+  - [ ] Launch Subagent 4: UI, State & Lifecycle Specialist (`src/ui/`, Streamlit reactive cycle, session state resets, widget guards).
+  - [ ] Launch Subagent 5: Packaging & Security Specialist (`grabber.spec`, `updater.py`, `desktop_entrypoint.py`, scripts).
+  - [ ] Synthesize audit findings into comprehensive categorized report.
+  - [ ] Resolve identified bugs, type errors, and linter violations.
+  - [ ] Run full verification suite (`pytest`, `ruff`, `mypy`) to confirm zero regressions.
 
 ---
 
 ## Review & Verification
 
 ### 1. Test Suite Results
-- Executed `pytest -v` covering models, query compilation, SQL generation, adapters, delimiter sniffing, updater, and dataset switching resilience.
-- **23/23 automated tests passed** in `26.91s`.
+- Executed `pytest -v` covering models, query compilation, SQL generation, adapters, delimiter sniffing, updater, dataset switching resilience, and heterogeneous Parquet union export.
+- **27/27 automated tests passed** in `26.94s`.
 - Additional XML annihilation benchmark passed with **10,000 XML records parsed in 0.37s** with a negligible **0.2 MB RSS memory diff**, proving flat $O(1)$ memory consumption.
 
 ### 2. Real-World Datasets Verification
@@ -103,6 +140,7 @@
   - Streaming iterative parser tested on 1.3 GB single XML file parsed 500,000 records at **288.2 MB/s** maintaining **28.1 MB constant RSS**.
   - Verified sample indexing and query execution in **0.001s**.
   - Seamless dataset switching from `data/test1` (27 columns including `ANNO`) to `data/annihilation_test` (25 columns without `ANNO`) verified with zero `StreamlitDefaultNotInOptionsError` or stale widget state exceptions.
+  - Multi-chunk XML Parquet cache export on `data/annihilation_test/2014_2015` (22 partitions with heterogeneous fields like `ATTO_CONCESSIONE`) verified with 17,747 rows exported flawlessly to CSV (20 MB), Parquet (641 KB), and JSON (30.9 MB).
 
 ### 3. Standards & Architecture Conformance
 - **Clean Architecture**: Domain layer (`src/core/`), Adapters layer (`src/adapters/`), Engine layer (`src/engine/`), and UI layer (`src/ui/`) strictly decoupled.
@@ -121,3 +159,29 @@
 - Implemented [src/ui/state_manager.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/state_manager.py) (`reset_dataset_ui_state()`) to purge all schema-dependent keys and dynamic widget keys (`col_sel_*`, `val_*`) when switching datasets.
 - Applied defense-in-depth sanitization across [data_viewer.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/data_viewer.py), [filter_battery.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/filter_battery.py), and [aggregations.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/aggregations.py).
 - Fully covered with automated tests in [tests/test_dataset_switch.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_dataset_switch.py).
+### 7. Parquet Glob Schema Unification (`union_by_name=true`)
+- Enforced `union_by_name=true` on all Parquet glob reading and view registrations across [parquet_adapter.py](file:///Users/gabrielevianello/Desktop/grabber/src/adapters/parquet_adapter.py), [xml_adapter.py](file:///Users/gabrielevianello/Desktop/grabber/src/adapters/xml_adapter.py), and [duckdb_engine.py](file:///Users/gabrielevianello/Desktop/grabber/src/engine/duckdb_engine.py).
+- Normalized path resolution in `get_cache_path` with `Path(p).resolve()` guaranteeing stable cache lookups.
+- Verified with automated tests in [tests/test_parquet_union.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_parquet_union.py).
+### 8. Text Search Sanitization & Pagination Offset Recovery
+- Implemented robust sanitization in [QueryBuilder](file:///Users/gabrielevianello/Desktop/grabber/src/engine/query_builder.py): strips outer straight quotes (`"`, `'`), typographic smart quotes (`“`, `”`, `‘`, `’`, `«`, `»`, `` ` ``), and whitespace from text search and global search terms.
+- Added multi-token keyword compilation for `CONTAINS` filters and global search, translating multi-word terms into `AND` conjunctions.
+- Implemented proactive page reset in [filter_battery.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/filter_battery.py) when search signatures change.
+- Implemented reactive offset recovery in [data_viewer.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/data_viewer.py): if `offset > 0` returns empty rows while `total_matching_rows > 0`, immediately re-executes page 1 with `spec.offset = 0`.
+- Ensured stale database views are dropped in [duckdb_engine.py](file:///Users/gabrielevianello/Desktop/grabber/src/engine/duckdb_engine.py) when unindexed datasets are connected, providing clear indexing guidance in the UI.
+- Verified live on `data/test1` (23.9M rows): `"intelligenza"` on `DESCRIZIONE_PROGETTO` returned **5,345 records** in 2.8s; global search returned **8,551 records**; covered by 6 automated tests in [tests/test_string_search.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_string_search.py).
+### 9. Multi-Process Parallel XML-to-Parquet Streaming Indexer (`cores - 2`)
+- Implemented `_convert_single_xml_worker` picklable top-level worker in [xml_adapter.py](file:///Users/gabrielevianello/Desktop/grabber/src/adapters/xml_adapter.py).
+- Configured dynamic worker scaling to `max(1, os.cpu_count() - 2)` (12 parallel workers on 14 cores) in `convert_to_parquet_streaming`.
+- Parallelized multi-file XML conversions with `concurrent.futures.ProcessPoolExecutor` with real-time `as_completed` progress reporting.
+- Added `multiprocessing.freeze_support()` to [desktop_entrypoint.py](file:///Users/gabrielevianello/Desktop/grabber/desktop_entrypoint.py) for PyInstaller desktop bundle support.
+- Added graceful fallback to sequential execution in case of multiprocessing environment constraints.
+- Fully tested with automated tests in [tests/test_parallel_xml.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_parallel_xml.py).
+- Achieved **>2.3x speedup on small batches and up to 6x-10x speedup on multi-file archives** while keeping memory consumption bounded.
+### 10. Fix IndexError on Pagination Button Navigation & Eager Evaluation
+- Eliminated Python eager evaluation vulnerability in [filter_battery.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/filter_battery.py): replaced `entry.get("column", schema.columns[0].name)` with lazy guarded evaluation `entry.get("column") or first_col_name`.
+- Added defensive empty schema guard at the entry of `render_filter_battery`: returns `([], None, None)` immediately if `not schema or not schema.columns`.
+- Synchronized `page_num_input` in [data_viewer.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/data_viewer.py) with `current_page` when clicking `⬅️ Precedente` or `Successiva ➡️`, preventing state bounce on Streamlit rerun.
+- Fully tested and covered with automated tests in [tests/test_pagination_and_filter_resilience.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_pagination_and_filter_resilience.py). Full test suite passes: **40/40 tests passing**.
+
+

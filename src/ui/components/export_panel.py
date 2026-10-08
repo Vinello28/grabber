@@ -35,7 +35,13 @@ def render_export_panel(
         try:
             total_matching = engine.count_matching_rows(spec)
         except Exception as e:
-            st.error(f"Errore: {e}")
+            if schema.source_format == "xml" and engine.current_sql_source is None:
+                st.info(
+                    "ℹ️ **Dataset XML non ancora indicizzato**: per esportare i dati filtrati, "
+                    "avvia la conversione streaming cliccando su **'⚡ Indicizza XML in Parquet'** nella barra laterale."
+                )
+            else:
+                st.error(f"Errore: {e}")
             return
 
     st.success(f"🎯 **{total_matching:,} record** selezionati e pronti per l'esportazione.")
