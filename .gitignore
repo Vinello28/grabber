@@ -1,0 +1,15 @@
+.venv/
+.cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+exports/
+build/
+dist/
+*.csv.tmp
+*.parquet.tmp
+.DS_Store
+
+# Data
+data/
+!data/.gitkeep
