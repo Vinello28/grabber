@@ -5,19 +5,25 @@ Cross-platform launcher for macOS, Windows, and Linux.
 Automatically starts the Streamlit GUI in the local browser.
 """
 
-import os
-import sys
+import multiprocessing
 import subprocess
+import sys
 from pathlib import Path
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     root_dir = Path(__file__).resolve().parent
     app_path = root_dir / "src" / "ui" / "app.py"
 
     print("=" * 60)
-    print("⚡ GRABBER - Big Data Analytical Engine")
-    print("   Cross-Platform Out-of-Core Data Query & Export GUI")
+    print("GRABBER - Big Data Analytical Engine")
+    print("Cross-Platform Out-of-Core Data Query & Export GUI")
     print("=" * 60)
     print(f"Directory di lavoro: {root_dir}")
     print(f"Applicazione: {app_path}")
@@ -45,4 +51,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

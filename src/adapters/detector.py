@@ -4,16 +4,17 @@ Identifies whether a path points to CSV, Parquet, XML, or a directory of files.
 """
 
 from __future__ import annotations
+
 import glob
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, ClassVar
 
 
 class DatasetDetector:
     """Detects format, file lists, and sizes of datasets."""
 
-    SUPPORTED_EXTENSIONS = {
+    SUPPORTED_EXTENSIONS: ClassVar[dict[str, str]] = {
         ".csv": "csv",
         ".tsv": "csv",
         ".txt": "csv",
@@ -23,16 +24,16 @@ class DatasetDetector:
     }
 
     @classmethod
-    def analyze_path(cls, path_str: str) -> Dict[str, any]:
+    def analyze_path(cls, path_str: str) -> dict[str, Any]:
         """
         Analyze path to return format, files list, total size, and directory status.
         Supports single files, directories, and glob patterns.
         """
-        path_str = os.path.expanduser(path_str.strip())
+        path_str = os.path.expanduser(path_str.strip().strip("'\""))
         path = Path(path_str)
 
-        files: List[str] = []
-        fmt: Optional[str] = None
+        files: list[str] = []
+        fmt: str | None = None
 
         if "*" in path_str or "?" in path_str:
             matched = sorted(glob.glob(path_str))
@@ -41,15 +42,17 @@ class DatasetDetector:
             # Check for direct files first, then recursive if needed
             for ext, f_type in cls.SUPPORTED_EXTENSIONS.items():
                 direct_matches = sorted(glob.glob(os.path.join(path_str, f"*{ext}")))
+                direct_matches = [f for f in direct_matches if not os.path.basename(f).startswith((".", "~$"))]
                 if direct_matches:
                     files = direct_matches
                     fmt = f_type
                     break
-            
+
             # If no direct matches, check one level deeper or recursive
             if not files:
                 for ext, f_type in cls.SUPPORTED_EXTENSIONS.items():
                     nested_matches = sorted(glob.glob(os.path.join(path_str, f"**/*{ext}"), recursive=True))
+                    nested_matches = [f for f in nested_matches if not os.path.basename(f).startswith((".", "~$"))]
                     if nested_matches:
                         files = nested_matches
                         fmt = f_type
@@ -60,6 +63,8 @@ class DatasetDetector:
             fmt = cls.SUPPORTED_EXTENSIONS.get(ext)
         else:
             raise FileNotFoundError(f"Path does not exist: {path_str}")
+
+        files = [f for f in files if not os.path.basename(f).startswith((".", "~$"))]
 
         if not files:
             raise ValueError(f"No supported data files (.csv, .parquet, .xml) found in: {path_str}")

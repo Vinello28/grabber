@@ -110,18 +110,58 @@
   - Add empty schema check (`if not schema or not schema.columns: return [], None, None`) in `filter_battery.py`.
   - Synchronize `page_num_input` widget state with `current_page` in `data_viewer.py` to prevent state bounce on rerun.
   - Added automated regression tests in `tests/test_pagination_and_filter_resilience.py` (40/40 tests passing).
-- [/] 15. Multi-Agent Comprehensive System Audit (Bugs, Linters, Type Safety, Edge Cases) <!-- id: 14 -->
+- [x] 15. Multi-Agent Comprehensive System Audit (Bugs, Linters, Type Safety, Edge Cases) <!-- id: 14 -->
   - [x] Baseline test suite and linter execution (`pytest` 40/40 passed, initial `ruff`/`mypy` scans).
-  - [ ] Launch Subagent 1: Static Analysis & Linting Specialist (`ruff` findings, syntax errors, dead code, formatting).
-  - [ ] Launch Subagent 2: Engine & Core Domain Specialist (`src/core/`, `src/engine/`, type definitions, SQL compilers, memory lifecycle).
-  - [ ] Launch Subagent 3: Adapters & Ingestion Specialist (`src/adapters/`, CSV sniffing, XML stream parser, Parquet union, worker safety).
-  - [ ] Launch Subagent 4: UI, State & Lifecycle Specialist (`src/ui/`, Streamlit reactive cycle, session state resets, widget guards).
-  - [ ] Launch Subagent 5: Packaging & Security Specialist (`grabber.spec`, `updater.py`, `desktop_entrypoint.py`, scripts).
-  - [ ] Synthesize audit findings into comprehensive categorized report.
-  - [ ] Resolve identified bugs, type errors, and linter violations.
-  - [ ] Run full verification suite (`pytest`, `ruff`, `mypy`) to confirm zero regressions.
+  - [x] Subagent 1: Static Analysis & Linting Specialist audit completed (318 Ruff lint items, 22 Mypy items, f-string backslash issue, closures).
+  - [x] Subagent 2: Engine & Core Domain Specialist audit completed (Missing DataType import, aggregation pagination bug, MIN/MAX DOUBLE corruption, NaN/Inf SQL bug, redundant export count).
+  - [x] Subagent 3: Adapters & Ingestion Specialist audit completed (XML streaming non-target clearance, row estimation formula, union_by_name in CSV, interval type classification).
+  - [x] Subagent 4: UI, State & Lifecycle Specialist audit completed (Filter index key collisions, invalid regex crash, multiselect forced-reset bugs, AppleScript cancel fallback, export desync).
+  - [x] Subagent 5: Packaging & Security review completed (grabber.spec tkinter exclusion, freeze_support in run.py, updater tmp staging).
+  - [x] Implementation Phase 1: Core Engine & Query Builder Fixes
+    - Fix missing `DataType` import in `duckdb_engine.py` (remove silent swallow).
+    - Fix aggregation pagination and count query subquery in `query_builder.py` and `duckdb_engine.py`.
+    - Fix `MIN`/`MAX` type corruption in `query_builder.py` (remove forced `TRY_CAST(... AS DOUBLE)`).
+    - Fix `nan`/`inf` validation in numeric filters in `query_builder.py` (`math.isfinite`).
+    - Fix numeric `NOT_EQUALS` empty string handling (`IS DISTINCT FROM`).
+    - Remove redundant full-scan row count in `export_query` in `duckdb_engine.py`.
+    - Add `close()` lifecycle method to `DuckDBEngine` and `IQueryEngine`.
+  - [x] Implementation Phase 2: Adapters & Ingestion Fixes
+    - Fix f-string backslash syntax in `csv_adapter.py` and `parquet_adapter.py` for Python 3.10/3.11 compatibility.
+    - Add `union_by_name=true` to `read_csv` in `csv_adapter.py`.
+    - Fix `xml_adapter.py`: clear non-target elements, fix XML row count estimation, fix `candidate_counts.__getitem__` in `max()`, remove duplicate `columns` definition.
+    - Fix `detector.py`: type annotation `dict[str, Any]`, strip quotes from user path, ignore hidden/lock files.
+    - Fix interval type classification in `csv_adapter.py`, `parquet_adapter.py`, and `xml_adapter.py`.
+  - [x] Implementation Phase 3: UI & State Lifecycle Fixes
+    - Fix filter row state corruption in `filter_battery.py` by using stable persistent filter IDs (`entry["id"]`).
+    - Fix regex validation with `re.compile()` in `filter_battery.py`.
+    - Fix closure binding in `filter_battery.py` operator dropdown.
+    - Fix multiselect forced-reset in `aggregations.py` (`agg_group_by_cols`) and `data_viewer.py` (`viewer_cols_multiselect`).
+    - Fix "Rimuovi Tutti" and dataset switch global search leak in `filter_battery.py` and `state_manager.py`.
+    - Fix export format extension desync and transient download button in `export_panel.py`.
+    - Fix AppleScript quote escaping and cancel fallback in `file_picker.py`.
+    - Fix distinct tab crash on 0-column dataset and chart alias collision in `aggregations.py`.
+    - Fix `schema` variable shadowing in `dataset_selector.py`.
+  - [x] Implementation Phase 4: Packaging, Security & Linting Polish
+    - Un-exclude `tkinter` in `grabber.spec` for native pickers.
+    - Add `multiprocessing.freeze_support()` to `run.py`.
+    - Atomic download staging (`.tmp`) in `updater.py`.
+    - Run automated Ruff and Mypy fixes to clean unused imports, sort imports, and eliminate warnings.
+  - [x] Implementation Phase 5: Verification & Full Regression Testing
+    - Run `pytest -v` across all test suites + add regression tests for fixed issues.
+- [x] 16. UI Text Refinement, AI Slop Elimination, OS Cache Management, Automated Versioning & Windows CI Fix <!-- id: 15 -->
+  - [x] 16.1 Eliminate '>70 GB' text from UI (`app.py`), pyproject.toml, and documentation.
+  - [x] 16.2 Remove AI slop (em dashes, rhetorical buzzwords, hyperbolic marketing copy, redundant comments) across codebase and documentation.
+  - [x] 16.3 Replace incorrect repository reference with clean GitHub icon/link, and explain/implement automated tag versioning.
+  - [x] 16.4 Migrate cache and spillover directories to standard OS user paths (`~/.cache/grabber`, `~/Library/Caches/Grabber`, `%LOCALAPPDATA%/Grabber/Cache`) and implement "Svuota Cache" GUI control.
+  - [x] 16.5 Fix Windows CI/CD cp1252 `UnicodeEncodeError` in `build_executable.py` and GitHub Actions workflow.
+  - [x] 16.6 Run full test suite, linter, and type checker to verify zero regressions.
+- [x] 17. GitHub Repository Username Fix & Production Preset Buttons Concealment <!-- id: 16 -->
+  - [x] 17.1 Set default GitHub repository to `Vinello28/grabber` in `src/core/version.py`.
+  - [x] 17.2 Hide development test presets ("Test CSV", "Test XML") when running in production or packaged standalone executables.
 
 ---
+
+
 
 ## Review & Verification
 
@@ -177,11 +217,70 @@
 - Added `multiprocessing.freeze_support()` to [desktop_entrypoint.py](file:///Users/gabrielevianello/Desktop/grabber/desktop_entrypoint.py) for PyInstaller desktop bundle support.
 - Added graceful fallback to sequential execution in case of multiprocessing environment constraints.
 - Fully tested with automated tests in [tests/test_parallel_xml.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_parallel_xml.py).
-- Achieved **>2.3x speedup on small batches and up to 6x-10x speedup on multi-file archives** while keeping memory consumption bounded.
 ### 10. Fix IndexError on Pagination Button Navigation & Eager Evaluation
 - Eliminated Python eager evaluation vulnerability in [filter_battery.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/filter_battery.py): replaced `entry.get("column", schema.columns[0].name)` with lazy guarded evaluation `entry.get("column") or first_col_name`.
 - Added defensive empty schema guard at the entry of `render_filter_battery`: returns `([], None, None)` immediately if `not schema or not schema.columns`.
 - Synchronized `page_num_input` in [data_viewer.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/data_viewer.py) with `current_page` when clicking `⬅️ Precedente` or `Successiva ➡️`, preventing state bounce on Streamlit rerun.
 - Fully tested and covered with automated tests in [tests/test_pagination_and_filter_resilience.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_pagination_and_filter_resilience.py). Full test suite passes: **40/40 tests passing**.
+
+### 11. Multi-Agent Comprehensive System Audit & Quality Assurance (100% Resolved)
+- **Engine & Core Domain**:
+  - Imported `DataType` in `duckdb_engine.py`, eliminating silent `NameError` inside schema refresh.
+  - Implemented `DuckDBEngine.close()` and context manager support (`__enter__`, `__exit__`), releasing connections and disk spillover temp directories.
+  - Fixed aggregation pagination query calculation and subquery wrapping in `query_builder.py` and `duckdb_engine.py` (stripping subquery `LIMIT`/`OFFSET` to compute total matching groups).
+  - Fixed `MIN`/`MAX` aggregations corrupting non-numeric/date columns by removing forced `TRY_CAST(... AS DOUBLE)`.
+  - Added strict `math.isfinite` check preventing `nan` and `inf` SQL parser crashes.
+  - Fixed numeric `NOT_EQUALS` with `IS DISTINCT FROM` for safe NULL comparison.
+  - Enhanced `BETWEEN` to seamlessly accept both `value_to` and `(val_min, val_max)` tuple representations with auto-inverted bounds normalization.
+  - Eliminated redundant full-scan row counting in `duckdb_engine.export_query`.
+- **Adapters & Ingestion**:
+  - Replaced backslash f-strings with pre-escaped variables across `csv_adapter.py` and `parquet_adapter.py` for Python 3.10/3.11 cross-compatibility.
+  - Added `union_by_name=true` to `read_csv` in `csv_adapter.py`.
+  - Fixed `xml_adapter.py`: cleared non-target DOM elements maintaining flat $O(1)$ memory, fixed XML row estimation formula, typed `max()` key, and eliminated duplicate `columns` definition.
+  - Fixed `detector.py`: typed annotations `dict[str, Any]`, stripped user path quotes, ignored hidden and lock files.
+  - Checked `INTERVAL` data types before classifying as numeric across all adapters.
+- **UI & State Lifecycle**:
+  - Replaced index-based widget keys with persistent UUIDs (`entry["id"]`) in `filter_battery.py`, preventing widget state corruption on row deletion.
+  - Added safe regex validation with `re.compile()` preventing user regex exceptions.
+  - Fixed late-binding closure in `filter_battery.py` operator selectbox.
+  - Removed forced reset snapback in `aggregations.py` (`agg_group_by_cols`) and `data_viewer.py` (`viewer_cols_multiselect`).
+  - Synced export format extension change and made download button persistent across reruns in `export_panel.py`.
+  - Handled macOS AppleScript cancel gracefully in `file_picker.py` without secondary Tkinter popups.
+  - Fixed variable shadowing and state cleanup on connection failure in `dataset_selector.py`.
+- **Packaging & CI/CD**:
+  - Un-excluded `tkinter` in `grabber.spec` for native folder and file pickers in packaged executables.
+  - Added `multiprocessing.freeze_support()` in `run.py`.
+  - Configured atomic download staging (`.tmp`) in `updater.py`.
+- **Verification & Static Analysis**:
+  - Automated linters: `uvx ruff check` passed with **0 errors across all files**.
+  - Type checking: `uvx mypy` passed with **0 issues in 39 source files**.
+  - Test suite: **48/48 tests passed** in `29.51s`, including the dedicated regression test suite [tests/test_audit_fixes_regression.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_audit_fixes_regression.py).
+
+### 12. UI Polish, AI Slop Cleanup, Cache Management & CI/CD Unicode Resolution (100% Resolved)
+- **UI & Wording Refinements**:
+  - Completely eliminated `>70 GB`, `70+ GB`, and quantitative hardware claims from [app.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/app.py), [pyproject.toml](file:///Users/gabrielevianello/Desktop/grabber/pyproject.toml), and [README.md](file:///Users/gabrielevianello/Desktop/grabber/README.md).
+  - Replaced welcome screen and export panel promotional buzzwords with factual, concise descriptions.
+  - Removed static unclickable repository caption (`Repo: ...`) in [update_checker.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/update_checker.py) and replaced it with a direct, clean GitHub link (`Versione: **v{__version__}** • [GitHub](...)`).
+- **AI Slop Elimination**:
+  - Removed unicode em dashes (`—`), rhetorical buzzwords ("robust", "resilient", "defensively", "proactively", "seamlessly", "guarantees", "ultra-fast", "a memoria zero", "footprint di memoria nullo") and redundant comments stating the obvious across adapters, engine, UI components, and README.
+- **OS-Standard Cache & GUI Svuota Cache**:
+  - Implemented centralized path resolver [src/core/paths.py](file:///Users/gabrielevianello/Desktop/grabber/src/core/paths.py) supporting standard OS cache paths (`~/Library/Caches/Grabber` on macOS, `%LOCALAPPDATA%/Grabber/Cache` on Windows, `~/.cache/grabber` on Linux) with `GRABBER_CACHE_DIR` environment override.
+  - Wired `get_parquet_cache_dir()` and `get_spill_dir()` into [XmlAdapter](file:///Users/gabrielevianello/Desktop/grabber/src/adapters/xml_adapter.py) and [DuckDBEngine](file:///Users/gabrielevianello/Desktop/grabber/src/engine/duckdb_engine.py).
+  - Implemented [src/ui/components/cache_controls.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/cache_controls.py) with dynamic disk usage display and one-click "Svuota Cache" button in Streamlit sidebar.
+  - Added unit test suite [tests/test_cache_and_paths.py](file:///Users/gabrielevianello/Desktop/grabber/tests/test_cache_and_paths.py).
+- **Windows CI/CD cp1252 Unicode Fix & Automated Tag Versioning**:
+  - Removed unencodable emojis (`🔨`, `✅`, `⚡`) from [build_executable.py](file:///Users/gabrielevianello/Desktop/grabber/build_executable.py), [run.py](file:///Users/gabrielevianello/Desktop/grabber/run.py), and [run.bat](file:///Users/gabrielevianello/Desktop/grabber/run.bat). Added `sys.stdout.reconfigure(encoding='utf-8')`.
+  - Added `PYTHONIOENCODING="utf-8"` and `PYTHONUTF8="1"` to [.github/workflows/build_releases.yml](file:///Users/gabrielevianello/Desktop/grabber/.github/workflows/build_releases.yml).
+  - Implemented automated Git tag version synchronization in [.github/workflows/build_releases.yml](file:///Users/gabrielevianello/Desktop/grabber/.github/workflows/build_releases.yml) and [build_executable.py](file:///Users/gabrielevianello/Desktop/grabber/build_executable.py) (`sync_version_from_git_or_env`).
+- **Quality Assurance**:
+  - Test suite: **51/51 tests passed** in `29.71s`.
+  - Linters: `uvx ruff check` passed with **0 errors**.
+  - Type checking: `uvx mypy` passed with **0 issues in 42 source files**.
+
+### 13. GitHub Username Correction & Production Presets Concealment
+- Corrected default GitHub repository owner in [src/core/version.py](file:///Users/gabrielevianello/Desktop/grabber/src/core/version.py) to `Vinello28/grabber`.
+- Gated quick test preset buttons ("Test CSV", "Test XML") behind development environment check in [src/ui/components/dataset_selector.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/dataset_selector.py) (`is_prod = getattr(sys, "frozen", False) or os.getenv("GRABBER_ENV", "").lower() == "production"`), ensuring they are never rendered in standalone executables or production installations.
+- In production, defaulted initial dataset path input to empty string `""` rather than development folder path `"data/test1"`.
+
 
 

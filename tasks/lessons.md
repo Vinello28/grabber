@@ -67,3 +67,44 @@
   1. Always guard UI components with `if not schema or not schema.columns: return ...` before attempting any column indexing or rendering.
   2. Never use direct list indexing in `dict.get(key, list[0])`. Always evaluate fallbacks lazily or with explicit guards: `first_col = schema.columns[0].name if schema.columns else ""` and `val = entry.get("column") or first_col`.
   3. Always synchronize paired input widgets (`page_num_input`) whenever programmatic navigation buttons (`⬅️ Precedente`, `Successiva ➡️`) modify the underlying state variable (`current_page`).
+
+## Plan Verification & Explicit User Approval Before Implementation
+- NEVER start modifying code, models, adapters, engines, or UI components without presenting the complete plan and receiving explicit approval from the user.
+- When an audit is requested, the objective is to analyze, diagnose, and present the report with actionable remediation plans.
+- **Rule**:
+  1. Always strictly adhere to Task Management Step 2: **Verify Plan: Check in before starting implementation**.
+  2. Complete the audit, summarize all findings with severity levels and trade-offs, and STOP immediately.
+  3. Wait for the user to review, validate, adjust, or give explicit approval before making ANY modifications to codebase files.
+
+## Dynamic Streamlit Widget Keys & Row Deletion Integrity
+- When rendering dynamic lists of rows (like filter batteries) with widgets (`st.selectbox`, `st.text_input`), naming keys by array index (e.g. `col_{idx}`, `val_{idx}`) causes severe state corruption upon deletion: deleting element $k$ shifts element $k+1$ into index $k$, causing Streamlit to retain and display the deleted item's cached widget inputs on the surviving row.
+- **Rule**: Always assign persistent UUIDs (`entry["id"] = str(uuid.uuid4())`) to list entries upon creation, and key all child widgets using that persistent ID (`f"col_{entry['id']}"`).
+
+## Python 3.10/3.11 Backslash in f-String Incompatibility
+- Python versions prior to 3.12 strictly forbid backslashes inside expressions within f-strings (e.g. `f"'{path.replace('\'', '\'\'')}'"` raises `SyntaxError: f-string expression part cannot include a backslash`).
+- **Rule**: Always pre-escape strings into local variables before embedding them into f-strings: `escaped = path.replace("'", "''")` followed by `f"'{escaped}'"`.
+
+## Engine Connection Lifecycle & Context Managers
+- Leaving database connections (`DuckDBPyConnection`) unclosed relies entirely on garbage collection and process exit, risking locked temp directories and file descriptor leaks.
+- In `DuckDBEngine.close()`, always explicitly close the connection and set `self.conn = None` so subsequent checks can reliably verify connection state.
+- Implement `__enter__` (returning `Self`) and `__exit__` (calling `close()`) on engine instances to support clean `with DuckDBEngine() as engine:` workflows.
+
+## Native UI Pickers in PyInstaller Bundles
+- Excluding `tkinter` in PyInstaller spec files breaks cross-platform native file and folder pickers on Windows and Linux (`ModuleNotFoundError`).
+- **Rule**: Never exclude `tkinter` in `grabber.spec` when native fallback file dialogs are utilized.
+
+## Windows CLI Console Unicode (cp1252) & Build Scripts
+- Non-ASCII emojis (`🔨`, `✅`, `⚡`) in console print statements crash with `UnicodeEncodeError: 'charmap' codec can't encode character` when executed on Windows CI runners or command prompts using default `cp1252`.
+- **Rule**:
+  1. Never use emojis in console stdout prints inside CLI build scripts, launcher scripts, or batch files. Use standard ASCII markers (`[BUILD]`, `[OK]`, `[INFO]`).
+  2. Always add `sys.stdout.reconfigure(encoding='utf-8')` if available.
+  3. Explicitly set `PYTHONIOENCODING="utf-8"` and `PYTHONUTF8="1"` in GitHub Actions workflows across all platforms.
+
+## Packaged Executable Cache & Working Directory Independence
+- Standalone executables (.exe, .app/dmg, Linux bundles) must never write cache or spillover files to relative paths (`.cache/`) based on `os.getcwd()`, as packaged apps often run in read-only directories or root (`/`), causing `PermissionError: [Errno 13]`.
+- **Rule**: Always resolve OS-standard user cache paths (`~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows, `~/.cache` on Linux) with an environment variable override (`GRABBER_CACHE_DIR`).
+
+## Automated Release Version Synchronization from Git Tags
+- Hardcoding `__version__ = "1.0.0"` in Python source files causes PyInstaller bundles to freeze stale version numbers even when built from Git tags (e.g. `v1.2.0`), which causes in-app updaters to immediately display false update notifications.
+- **Rule**: Always automate version synchronization in the CI/CD pipeline before running PyInstaller (e.g. injecting `${GITHUB_REF_NAME#v}` into `src/core/version.py`), and provide a local Git fallback in the build script.
+

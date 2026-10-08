@@ -4,18 +4,19 @@ Directly bootstraps Streamlit in-process and opens the local browser.
 Designed for PyInstaller standalone executables (.exe, .app, Linux binary).
 """
 
-import os
 import sys
 from pathlib import Path
-import webbrowser
-import streamlit.web.bootstrap as bootstrap
+
+from streamlit.web import bootstrap
 
 
 def get_base_dir() -> Path:
     """Return base directory whether running from source or PyInstaller bundle."""
     if getattr(sys, "frozen", False):
         # Running as PyInstaller frozen executable
-        return Path(sys._MEIPASS)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
     return Path(__file__).resolve().parent
 
 

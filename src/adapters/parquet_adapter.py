@@ -1,14 +1,17 @@
 """
-Parquet Adapter for ultra-fast streaming columnar querying with DuckDB.
+Parquet Adapter for streaming columnar querying with DuckDB.
 Supports single files, lists of files, and partitioned directories.
 """
 
 from __future__ import annotations
+
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import duckdb
+
 from src.core.interfaces import IDatasetAdapter
-from src.core.models import ColumnMeta, DataType, DatasetSchema
+from src.core.models import ColumnMeta, DatasetSchema, DataType
 
 
 class ParquetAdapter(IDatasetAdapter):
@@ -16,9 +19,9 @@ class ParquetAdapter(IDatasetAdapter):
 
     def can_handle(self, path: str) -> bool:
         lower = path.lower()
-        return lower.endswith(".parquet") or lower.endswith(".pq")
+        return lower.endswith((".parquet", ".pq"))
 
-    def get_source_description(self, path: str) -> Dict[str, Any]:
+    def get_source_description(self, path: str) -> dict[str, Any]:
         return {"format": "parquet"}
 
     def build_sql_source(self, path_or_files: Any) -> str:
@@ -30,12 +33,15 @@ class ParquetAdapter(IDatasetAdapter):
                 formatted_list = ", ".join(f"'{p}'" for p in file_paths)
                 files_expr = f"[{formatted_list}]"
         else:
-            files_expr = f"'{path_or_files.replace('\'', '\'\'')}'"
+            escaped_path = str(path_or_files).replace("'", "''")
+            files_expr = f"'{escaped_path}'"
 
         return f"read_parquet({files_expr}, union_by_name=true)"
 
     def inspect_schema(self, path_or_files: Any, duckdb_conn: duckdb.DuckDBPyConnection) -> DatasetSchema:
         if isinstance(path_or_files, list):
+            if not path_or_files:
+                raise ValueError("Nessun file fornito per l'ispezione dello schema.")
             sample_file = path_or_files[0]
             file_count = len(path_or_files)
             total_size = sum(os.path.getsize(f) for f in path_or_files)
@@ -51,7 +57,7 @@ class ParquetAdapter(IDatasetAdapter):
         describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
         sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
 
-        columns: List[ColumnMeta] = []
+        columns: list[ColumnMeta] = []
         for _, row in describe_df.iterrows():
             col_name = str(row["column_name"])
             native_type = str(row["column_type"]).upper()
@@ -60,9 +66,7 @@ class ParquetAdapter(IDatasetAdapter):
 
             sample_vals = []
             if col_name in sample_df:
-                sample_vals = [
-                    v for v in sample_df[col_name].dropna().unique()[:5].tolist()
-                ]
+                sample_vals = list(sample_df[col_name].dropna().unique()[:5])
 
             col_meta = ColumnMeta(
                 name=col_name,
@@ -81,8 +85,9 @@ class ParquetAdapter(IDatasetAdapter):
             table_identifier="parquet_source",
         )
 
-    def _classify_type(self, native_type: str, sample_series: Optional[Any]) -> DataType:
-        if any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT"]):
+    def _classify_type(self, native_type: str, sample_series: Any | None) -> DataType:
+        is_interval = "INTERVAL" in native_type
+        if not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT"]):
             return DataType.NUMERIC
         elif any(t in native_type for t in ["DATE", "TIME", "TIMESTAMP"]):
             return DataType.DATE

@@ -5,13 +5,15 @@ Adapts to any dataset schema, generating type-specific filter widgets
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Tuple
+
+from typing import Any
+
 import streamlit as st
 
 from src.core.models import (
     ColumnMeta,
-    DataType,
     DatasetSchema,
+    DataType,
     FilterOperator,
     FilterRule,
 )
@@ -33,7 +35,7 @@ def get_type_icon(dtype: DataType) -> str:
 def render_filter_battery(
     schema: DatasetSchema,
     engine: DuckDBEngine,
-) -> Tuple[List[FilterRule], str | None, List[str] | None]:
+) -> tuple[list[FilterRule], str | None, list[str] | None]:
     """
     Render global search bar and dynamic typed filter battery.
     Returns: (list_of_filter_rules, global_search_term, global_search_columns)
@@ -85,10 +87,14 @@ def render_filter_battery(
     col_btn_add, col_btn_clear, _ = st.columns([1.5, 1.5, 5])
     with col_btn_add:
         if st.button("➕ Aggiungi Filtro", use_container_width=True):
-            first_col_name = schema.columns[0].name if schema.columns else ""
+            import uuid
+            first_col = schema.columns[0] if schema.columns else None
+            first_col_name = first_col.name if first_col else ""
+            default_op = FilterOperator.BETWEEN.value if (first_col and first_col.is_numeric()) else FilterOperator.CONTAINS.value
             st.session_state["filter_entries"].append({
+                "id": uuid.uuid4().hex[:8],
                 "column": first_col_name,
-                "operator": FilterOperator.CONTAINS.value,
+                "operator": default_op,
                 "value": "",
                 "value_to": "",
             })
@@ -98,19 +104,25 @@ def render_filter_battery(
         if st.button("🧹 Rimuovi Tutti", use_container_width=True):
             st.session_state["filter_entries"] = []
             st.session_state["global_search_val"] = ""
+            st.session_state["input_global_search"] = ""
             st.rerun()
 
-    filter_rules: List[FilterRule] = []
-    entries_to_delete = []
+    filter_rules: list[FilterRule] = []
+    entries_to_delete: list[str] = []
 
-    column_map: Dict[str, ColumnMeta] = {c.name: c for c in schema.columns}
+    column_map: dict[str, ColumnMeta] = {c.name: c for c in schema.columns}
     col_display_options = [f"{get_type_icon(c.data_type)} {c.name}" for c in schema.columns]
     col_name_by_display = {f"{get_type_icon(c.data_type)} {c.name}": c.name for c in schema.columns}
     col_display_by_name = {c.name: f"{get_type_icon(c.data_type)} {c.name}" for c in schema.columns}
 
     # Render each filter row
     first_col_name = schema.columns[0].name if schema.columns else ""
-    for idx, entry in enumerate(st.session_state["filter_entries"]):
+    for entry in st.session_state["filter_entries"]:
+        if "id" not in entry:
+            import uuid
+            entry["id"] = uuid.uuid4().hex[:8]
+        entry_id = entry["id"]
+
         current_col = entry.get("column") or first_col_name
         if current_col not in column_map:
             current_col = first_col_name
@@ -124,7 +136,7 @@ def render_filter_battery(
         meta = column_map[current_col]
         dtype = meta.data_type
 
-        col_widget_key = f"col_sel_{idx}"
+        col_widget_key = f"col_sel_{entry_id}"
         if col_widget_key in st.session_state and st.session_state[col_widget_key] not in col_display_options:
             del st.session_state[col_widget_key]
 
@@ -140,7 +152,7 @@ def render_filter_battery(
                     "Colonna",
                     options=col_display_options,
                     index=curr_idx,
-                    key=f"col_sel_{idx}",
+                    key=f"col_sel_{entry_id}",
                 )
                 selected_col_name = col_name_by_display[sel_display]
                 if selected_col_name != current_col:
@@ -154,22 +166,21 @@ def render_filter_battery(
             # Select Operator tailored to type
             with f_cols[1]:
                 allowed_ops = _get_allowed_operators(dtype)
-                op_labels = {op: _get_op_label(op) for op in allowed_ops}
                 curr_op_val = entry.get("operator", allowed_ops[0].value)
                 curr_op = FilterOperator(curr_op_val) if curr_op_val in [o.value for o in allowed_ops] else allowed_ops[0]
 
                 sel_op = st.selectbox(
                     "Operatore",
                     options=allowed_ops,
-                    format_func=lambda o: op_labels[o],
+                    format_func=_get_op_label,
                     index=allowed_ops.index(curr_op),
-                    key=f"op_sel_{idx}",
+                    key=f"op_sel_{entry_id}",
                 )
                 entry["operator"] = sel_op.value
 
             # Input Values tailored to operator & type
             with f_cols[2]:
-                val, val_to = _render_value_inputs(idx, entry, sel_op, meta, engine)
+                val, val_to = _render_value_inputs(entry_id, entry, sel_op, meta, engine)
                 entry["value"] = val
                 entry["value_to"] = val_to
 
@@ -177,8 +188,8 @@ def render_filter_battery(
             with f_cols[3]:
                 st.write("")
                 st.write("")
-                if st.button("🗑️", key=f"del_btn_{idx}", help="Rimuovi filtro"):
-                    entries_to_delete.append(idx)
+                if st.button("🗑️", key=f"del_btn_{entry_id}", help="Rimuovi filtro"):
+                    entries_to_delete.append(entry_id)
 
             # Build FilterRule object if valid
             if _is_filter_valid(sel_op, val, val_to):
@@ -193,10 +204,16 @@ def render_filter_battery(
 
     # Process deletions
     if entries_to_delete:
-        for idx in sorted(entries_to_delete, reverse=True):
-            del st.session_state["filter_entries"][idx]
+        for del_id in entries_to_delete:
+            st.session_state["filter_entries"] = [
+                e for e in st.session_state["filter_entries"] if e.get("id") != del_id
+            ]
+            for prefix in ("col_sel_", "op_sel_", "val_single_", "val_min_", "val_max_", "val_multi_", "del_btn_"):
+                k = f"{prefix}{del_id}"
+                if k in st.session_state:
+                    del st.session_state[k]
         st.rerun()
-    # Proactively reset pagination to page 1 whenever search criteria change
+    # Reset pagination to page 1 when criteria change
     search_sig = (
         str(global_search.strip() if global_search else ""),
         tuple(sorted(search_cols or [])),
@@ -211,7 +228,7 @@ def render_filter_battery(
     return filter_rules, global_search.strip() or None, search_cols or None
 
 
-def _get_allowed_operators(dtype: DataType) -> List[FilterOperator]:
+def _get_allowed_operators(dtype: DataType) -> list[FilterOperator]:
     if dtype == DataType.NUMERIC:
         return [
             FilterOperator.BETWEEN,
@@ -271,12 +288,12 @@ def _get_op_label(op: FilterOperator) -> str:
 
 
 def _render_value_inputs(
-    idx: int,
-    entry: Dict[str, Any],
+    entry_id: str,
+    entry: dict[str, Any],
     op: FilterOperator,
     meta: ColumnMeta,
     engine: DuckDBEngine,
-) -> Tuple[Any, Any]:
+) -> tuple[Any, Any]:
     if op in (FilterOperator.IS_NULL, FilterOperator.IS_NOT_NULL):
         st.caption("Nessun parametro richiesto")
         return None, None
@@ -287,16 +304,22 @@ def _render_value_inputs(
             min_v = st.text_input(
                 "Minimo",
                 value=str(entry.get("value", "")),
-                key=f"val_min_{idx}",
+                key=f"val_min_{entry_id}",
                 placeholder="es. 1000",
             )
         with b_c2:
             max_v = st.text_input(
                 "Massimo",
                 value=str(entry.get("value_to", "")),
-                key=f"val_max_{idx}",
+                key=f"val_max_{entry_id}",
                 placeholder="es. 50000",
             )
+        if min_v and max_v:
+            try:
+                if float(str(min_v).replace(",", ".")) > float(str(max_v).replace(",", ".")):
+                    st.caption("ℹ️ Minimo superiore al massimo: l'intervallo verrà scambiato automaticamente")
+            except ValueError:
+                st.caption("⚠️ Inserire valori numerici validi")
         return min_v, max_v
 
     if op in (FilterOperator.IN_LIST, FilterOperator.NOT_IN_LIST):
@@ -310,7 +333,7 @@ def _render_value_inputs(
             "Seleziona valori:",
             options=distinct_vals,
             default=[v for v in curr_selected if v in distinct_vals],
-            key=f"val_multi_{idx}",
+            key=f"val_multi_{entry_id}",
         )
         return selected, None
 
@@ -318,17 +341,54 @@ def _render_value_inputs(
     val = st.text_input(
         "Valore",
         value=str(entry.get("value", "")),
-        key=f"val_single_{idx}",
+        key=f"val_single_{entry_id}",
         placeholder="Inserisci valore...",
     )
+    if op == FilterOperator.REGEX and val:
+        import re
+        try:
+            re.compile(str(val).strip())
+        except re.error:
+            st.caption("⚠️ Espressione regolare non valida (verrà ignorata finché incompleta)")
+    elif op in (FilterOperator.GT, FilterOperator.GTE, FilterOperator.LT, FilterOperator.LTE) and val:
+        try:
+            float(str(val).strip().replace(",", "."))
+        except ValueError:
+            st.caption("⚠️ Inserire un numero valido")
+
     return val, None
 
 
 def _is_filter_valid(op: FilterOperator, val: Any, val_to: Any) -> bool:
     if op in (FilterOperator.IS_NULL, FilterOperator.IS_NOT_NULL):
         return True
+    if op == FilterOperator.REGEX:
+        if not val or not str(val).strip():
+            return False
+        import re
+        try:
+            re.compile(str(val).strip())
+            return True
+        except re.error:
+            return False
     if op == FilterOperator.BETWEEN:
-        return bool(str(val).strip() and str(val_to).strip())
+        s_val, s_to = str(val).strip(), str(val_to).strip()
+        if not (s_val and s_to):
+            return False
+        try:
+            float(s_val.replace(",", "."))
+            float(s_to.replace(",", "."))
+            return True
+        except ValueError:
+            return False
+    if op in (FilterOperator.GT, FilterOperator.GTE, FilterOperator.LT, FilterOperator.LTE):
+        if val is None or not str(val).strip():
+            return False
+        try:
+            float(str(val).strip().replace(",", "."))
+            return True
+        except ValueError:
+            return False
     if op in (FilterOperator.IN_LIST, FilterOperator.NOT_IN_LIST):
         return isinstance(val, (list, tuple)) and len(val) > 0
     return bool(val is not None and str(val).strip())

@@ -4,23 +4,25 @@ Handles delimiters, multi-file globs, quotes, messy characters, and schema sniff
 """
 
 from __future__ import annotations
-import csv
+
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import duckdb
+
 from src.core.interfaces import IDatasetAdapter
-from src.core.models import ColumnMeta, DataType, DatasetSchema
+from src.core.models import ColumnMeta, DatasetSchema, DataType
 
 
 class CsvAdapter(IDatasetAdapter):
     """Adapter for CSV datasets."""
 
-    def __init__(self, delimiter: Optional[str] = None):
+    def __init__(self, delimiter: str | None = None):
         self.delimiter = delimiter
 
     def can_handle(self, path: str) -> bool:
         lower = path.lower()
-        return lower.endswith(".csv") or lower.endswith(".tsv") or lower.endswith(".txt")
+        return lower.endswith((".csv", ".tsv", ".txt"))
 
     def sniff_delimiter(self, sample_file: str) -> str:
         """Sniff delimiter from first few lines of a sample CSV file."""
@@ -28,10 +30,10 @@ class CsvAdapter(IDatasetAdapter):
             return self.delimiter
 
         delimiters = [",", ";", "\t", "|"]
-        scores = {d: 0 for d in delimiters}
+        scores = dict.fromkeys(delimiters, 0)
 
         try:
-            with open(sample_file, "r", encoding="utf-8", errors="replace") as f:
+            with open(sample_file, encoding="utf-8", errors="replace") as f:
                 lines = [f.readline() for _ in range(10)]
                 lines = [line for line in lines if line.strip()]
 
@@ -49,19 +51,16 @@ class CsvAdapter(IDatasetAdapter):
                     else:
                         scores[d] += header_count
 
-            best_delim = max(scores, key=scores.get)
+            best_delim = max(scores, key=lambda d: scores[d])
             return best_delim if scores[best_delim] > 0 else ","
         except Exception:
             return ","
 
-    def get_source_description(self, path: str) -> Dict[str, Any]:
+    def get_source_description(self, path: str) -> dict[str, Any]:
         return {"format": "csv"}
 
-    def build_sql_source(self, path_or_files: Any, delim: Optional[str] = None) -> str:
-        """
-        Builds the DuckDB `read_csv` SQL expression with robust fallback options
-        to avoid errors with real-world unquoted commas, special characters, etc.
-        """
+    def build_sql_source(self, path_or_files: Any, delim: str | None = None) -> str:
+        """Build the DuckDB read_csv SQL expression."""
         if isinstance(path_or_files, list):
             file_paths = [p.replace("'", "''") for p in path_or_files]
             if len(file_paths) == 1:
@@ -69,15 +68,15 @@ class CsvAdapter(IDatasetAdapter):
             else:
                 formatted_list = ", ".join(f"'{p}'" for p in file_paths)
                 files_expr = f"[{formatted_list}]"
-            sample_file = path_or_files[0]
+            sample_file = path_or_files[0] if path_or_files else ""
         else:
-            files_expr = f"'{path_or_files.replace('\'', '\'\'')}'"
+            escaped_path = str(path_or_files).replace("'", "''")
+            files_expr = f"'{escaped_path}'"
             sample_file = path_or_files
 
         if delim is None:
-            delim = self.sniff_delimiter(sample_file)
+            delim = self.sniff_delimiter(sample_file) if sample_file else ","
 
-        # Use robust parsing parameters
         return (
             f"read_csv({files_expr}, "
             f"delim='{delim}', "
@@ -87,12 +86,15 @@ class CsvAdapter(IDatasetAdapter):
             f"strict_mode=false, "
             f"null_padding=true, "
             f"ignore_errors=true, "
-            f"auto_detect=true)"
+            f"auto_detect=true, "
+            f"union_by_name=true)"
         )
 
     def inspect_schema(self, path_or_files: Any, duckdb_conn: duckdb.DuckDBPyConnection) -> DatasetSchema:
         """Inspect schema, column types, and sample data using DuckDB connection."""
         if isinstance(path_or_files, list):
+            if not path_or_files:
+                raise ValueError("Nessun file fornito per l'ispezione dello schema.")
             sample_file = path_or_files[0]
             file_count = len(path_or_files)
             total_size = sum(os.path.getsize(f) for f in path_or_files)
@@ -112,7 +114,7 @@ class CsvAdapter(IDatasetAdapter):
         # Fetch sample rows for type inference & preview
         sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
 
-        columns: List[ColumnMeta] = []
+        columns: list[ColumnMeta] = []
         for _, row in describe_df.iterrows():
             col_name = str(row["column_name"])
             native_type = str(row["column_type"]).upper()
@@ -122,9 +124,7 @@ class CsvAdapter(IDatasetAdapter):
 
             sample_vals = []
             if col_name in sample_df:
-                sample_vals = [
-                    v for v in sample_df[col_name].dropna().unique()[:5].tolist()
-                ]
+                sample_vals = list(sample_df[col_name].dropna().unique()[:5])
 
             col_meta = ColumnMeta(
                 name=col_name,
@@ -143,8 +143,9 @@ class CsvAdapter(IDatasetAdapter):
             table_identifier="csv_source",
         )
 
-    def _classify_type(self, native_type: str, sample_series: Optional[Any]) -> DataType:
-        if any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT"]):
+    def _classify_type(self, native_type: str, sample_series: Any | None) -> DataType:
+        is_interval = "INTERVAL" in native_type
+        if not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT"]):
             return DataType.NUMERIC
         elif any(t in native_type for t in ["DATE", "TIME", "TIMESTAMP"]):
             return DataType.DATE

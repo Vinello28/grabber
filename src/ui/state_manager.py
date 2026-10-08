@@ -1,12 +1,11 @@
 """
 UI Session State Lifecycle Manager.
-Handles cleanup, synchronization, and defensive sanitization of session state
-when switching between datasets to prevent Streamlit widget errors.
+Handles cleanup and synchronization of session state when switching datasets.
 """
 
 from __future__ import annotations
-import streamlit as st
 
+import streamlit as st
 
 # List of explicit keys that depend on dataset schema or column names
 DATASET_DEPENDENT_KEYS = [
@@ -16,15 +15,21 @@ DATASET_DEPENDENT_KEYS = [
     "sort_dir_radio",
     "current_page",
     "page_num_input",
+    "global_search_val",
+    "input_global_search",
     "global_search_cols_val",
     "multiselect_global_search_cols",
     "filter_entries",
     "active_filters",
+    "_prev_filter_signature",
     "agg_group_by_cols",
     "agg_sum_col",
     "agg_distinct_col",
     "distinct_col_sel",
     "export_path_input",
+    "last_export_path",
+    "last_export_size_mb",
+    "last_export_rows",
 ]
 
 # Prefixes for dynamically generated filter row widget keys
@@ -46,9 +51,7 @@ def reset_dataset_ui_state():
     persist from the previous dataset.
     """
     for key in list(st.session_state.keys()):
-        if any(key.startswith(prefix) for prefix in DYNAMIC_WIDGET_PREFIXES):
-            del st.session_state[key]
-        elif key in DATASET_DEPENDENT_KEYS:
+        if any(key.startswith(prefix) for prefix in DYNAMIC_WIDGET_PREFIXES) or key in DATASET_DEPENDENT_KEYS:
             del st.session_state[key]
 
     # Reset default filter entries list

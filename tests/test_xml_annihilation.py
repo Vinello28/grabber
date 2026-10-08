@@ -3,10 +3,10 @@ Benchmark and memory verification test on annihilation_test XML dataset.
 """
 
 import os
+
 import psutil
+
 from src.adapters.xml_adapter import XmlAdapter
-from src.engine.duckdb_engine import DuckDBEngine
-from src.core.models import QuerySpec, FilterRule, FilterOperator
 
 
 def test_xml_annihilation_streaming_memory():

@@ -3,11 +3,8 @@ Tests for multi-process parallel XML-to-Parquet conversion (cores - 2).
 """
 
 import os
-import shutil
-import tempfile
-from pathlib import Path
+
 import duckdb
-import pytest
 
 from src.adapters.xml_adapter import XmlAdapter, _convert_single_xml_worker
 
@@ -42,7 +39,7 @@ def test_convert_single_xml_worker_standalone(tmp_path):
 
     # Verify DuckDB reads the parquet file
     con = duckdb.connect()
-    cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{str(out_dir)}/*.parquet')").fetchone()[0]
+    cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_dir!s}/*.parquet')").fetchone()[0]
     assert cnt == 574
 
 
@@ -76,7 +73,7 @@ def test_parallel_xml_conversion_multi_files(tmp_path):
 
     # Check total rows in DuckDB
     con = duckdb.connect()
-    total_rows = con.execute(f"SELECT COUNT(*) FROM read_parquet('{str(out_dir)}/*.parquet', union_by_name=true)").fetchone()[0]
+    total_rows = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_dir!s}/*.parquet', union_by_name=true)").fetchone()[0]
     assert total_rows == (574 + 1 + 19)
 
     # Check progress callbacks fired
@@ -102,5 +99,5 @@ def test_sequential_fallback_single_worker(tmp_path):
     )
 
     con = duckdb.connect()
-    total_rows = con.execute(f"SELECT COUNT(*) FROM read_parquet('{str(out_dir)}/*.parquet', union_by_name=true)").fetchone()[0]
+    total_rows = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_dir!s}/*.parquet', union_by_name=true)").fetchone()[0]
     assert total_rows == (574 + 1)

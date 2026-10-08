@@ -4,7 +4,7 @@ Renders paginated, sortable data table previews with column visibility controls.
 """
 
 from __future__ import annotations
-from typing import List, Optional
+
 import pandas as pd
 import streamlit as st
 
@@ -15,9 +15,9 @@ from src.engine.duckdb_engine import DuckDBEngine
 def render_data_viewer(
     schema: DatasetSchema,
     engine: DuckDBEngine,
-    filters: List[FilterRule],
-    global_search: Optional[str],
-    global_search_cols: Optional[List[str]],
+    filters: list[FilterRule],
+    global_search: str | None,
+    global_search_cols: list[str] | None,
 ):
     """Render interactive data preview table with pagination and sorting."""
     st.markdown("#### 📋 Anteprima Dati")
@@ -26,7 +26,7 @@ def render_data_viewer(
     all_cols = schema.column_names
     fallback_selected = all_cols[:15] if len(all_cols) > 15 else all_cols
 
-    # Defensively sanitize cached column selection against current dataset schema
+    # Filter cached column selection against current dataset schema
     saved_cols = st.session_state.get("selected_viewer_cols")
     if saved_cols is not None:
         valid_saved = [c for c in saved_cols if c in all_cols]
@@ -34,17 +34,15 @@ def render_data_viewer(
     else:
         default_selected = fallback_selected
 
-    # Ensure widget key state is strictly valid for current options
+    # Ensure widget key state contains only valid options for current schema
     if "viewer_cols_multiselect" in st.session_state:
         st.session_state["viewer_cols_multiselect"] = [
             c for c in st.session_state["viewer_cols_multiselect"] if c in all_cols
         ]
-        if not st.session_state["viewer_cols_multiselect"]:
-            st.session_state["viewer_cols_multiselect"] = default_selected
 
     with st.expander("👁️ Personalizza Colonne Visibili", expanded=False):
         selected_cols = st.multiselect(
-            "Colonne da mostrare:",
+            "Colonne da mostrare (vuoto = tutte le colonne):",
             options=all_cols,
             default=default_selected,
             key="viewer_cols_multiselect",
@@ -151,12 +149,12 @@ def render_data_viewer(
     else:
         st.warning("Nessun record trovato con i filtri correnti.")
 
-    # Defensively sync page_num_input in session_state with total_pages
+    # Sync page_num_input in session_state with total_pages
     if "page_num_input" in st.session_state and st.session_state["page_num_input"] > total_pages:
         st.session_state["page_num_input"] = current_page
 
     # Pagination navigation bar
-    nav_c1, nav_c2, nav_c3, nav_c4 = st.columns([1, 1, 2, 2])
+    nav_c1, nav_c2, nav_c3, _ = st.columns([1, 1, 2, 2])
     with nav_c1:
         if st.button("⬅️ Precedente", disabled=(current_page <= 1), use_container_width=True):
             new_p = max(1, current_page - 1)

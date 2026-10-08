@@ -1,19 +1,19 @@
-# ⚡ Grabber — Big Data Analytical Engine & GUI
+# Grabber - Big Data Analytical Engine & GUI
 
-Applicazione ad elevate prestazioni per l'interrogazione analitica, il filtraggio avanzato e l'esportazione di dataset di **grandi dimensioni (>70 GB)** anche su workstation con **meno di 16 GB di RAM**.
+Applicazione ad elevate prestazioni per l'interrogazione analitica, il filtraggio e l'esportazione di dataset di grandi dimensioni anche su workstation standard.
 
-Cross-platform (**macOS, Windows, Linux**), con interfaccia grafica reattiva **dataset-agnostic** che si auto-adatta allo schema di qualunque dato fornito.
+Cross-platform (**macOS, Windows, Linux**), con interfaccia grafica reattiva che si auto-adatta allo schema di qualunque dato fornito.
 
 ---
 
-## 🏛️ Architettura e Principi di Design (Clean Architecture)
+## Architettura e Principi di Design
 
-L'applicazione segue i principi della **Clean Architecture** per garantire disaccoppiamento totale tra l'interfaccia utente, la logica di business e i connettori di memorizzazione:
+L'applicazione segue una separazione chiara dei componenti tra interfaccia utente, logica di business e connettori dati:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
 │                      UI LAYER                          │
-│   Streamlit Reactive GUI (Browser cross-platform)      │
+│   Streamlit GUI (Browser cross-platform)               │
 │   - Dynamic Filter Battery   - Interactive Data Grid   │
 │   - Multi-Column Aggregator  - Streaming Exporter      │
 └──────────────────────────▲─────────────────────────────┘
@@ -29,19 +29,19 @@ L'applicazione segue i principi della **Clean Architecture** per garantire disac
 │                  ADAPTERS & INGESTION                  │
 │   - CsvAdapter: Streaming multi-file sniffer/scanner   │
 │   - ParquetAdapter: Predicate & projection pushdown    │
-│   - XmlAdapter: Streaming lxml iterparse (O(1) memory) │
+│   - XmlAdapter: Streaming lxml iterparse               │
 │   - SchemaDetector: Classificazione automatica tipi    │
 └────────────────────────────────────────────────────────┘
 ```
 
-### Perché questo stack tecnologico?
-1. **Zero Memory Crash su >70 GB**:
-   I motori in-memory tradizionali (es. Pandas puro o ElementTree) caricano l'intero albero dati in RAM, causando immediati blocchi di sistema (`OOM Killer`) su dataset da 13GB - 70GB.
-   **DuckDB** opera nativamente in modalità *out-of-core*: mantiene solo i blocchi attivi di memoria in RAM e riversa automaticamente i risultati intermedi su disco bufferizzato (`temp_directory`), garantendo consumi stabili (spesso < 100-500 MB di RAM!).
-2. **Streaming XML con memoria costante O(1)**:
-   Per i file XML gerarchici (es. `annihilation_test` da 62 GB), `XmlAdapter` sfrutta un parser iterativo con pruning aggressivo dei nodi padre (`elem.clear()`), processando fino a **288 MB/s** con soli **~28 MB di RAM RSS**.
-3. **GUI Universale Cross-Platform**:
-   Streamlit fornisce una web GUI nativa eseguita nel browser locale, priva delle complessità di compilazione o incompatibilità di librerie grafiche native (come Qt/GTK/Tkinter su diversi OS).
+### Componenti tecnologici
+1. **Esecuzione Out-of-Core**:
+   I motori in-memory tradizionali caricano l'intero dataset in RAM, rischiando blocchi per memoria esaurita (`OOM`).
+   **DuckDB** opera in modalità out-of-core: mantiene in memoria solo i blocchi necessari e scrive i dati intermedi su disco se necessario, garantendo consumi stabili.
+2. **Streaming XML**:
+   Per i file XML, `XmlAdapter` sfrutta un parser iterativo con rimozione immediata degli elementi processati (`elem.clear()`), mantenendo costante l'occupazione di memoria.
+3. **Interfaccia Grafica**:
+   Streamlit fornisce un'interfaccia accessibile da browser locale senza dipendenze grafiche native complesse.
 
 ---
 
@@ -57,9 +57,9 @@ L'applicazione segue i principi della **Clean Architecture** per garantire disac
   - Raggruppamento per più colonne simultanee.
   - Metriche dinamiche: `COUNT(*)`, `COUNT DISTINCT`, `SUM`, `AVG`, `MIN`, `MAX`.
   - Visualizzazione tabellare e grafici istantanei a barre.
-- **Esportazione in Streaming a Memoria Zero**:
+- **Esportazione in Streaming**:
   - Esportazione dei soli record filtrati direttamente su file (`.csv`, `.parquet`, `.json`).
-  - L'operazione avviene interamente nel motore senza saturare la memoria del processo.
+  - L'operazione avviene in streaming nel motore analitico.
   - Download diretto integrato nel browser per file fino a 150 MB.
 - **Monitor di Sistema Live**:
   - Widget nella barra laterale con RAM del processo, RAM libera di sistema, percentuale CPU e core utilizzati.
@@ -155,10 +155,10 @@ grabber/
 │   │   ├── models.py          # DataType, ColumnMeta, FilterRule, QuerySpec
 │   │   └── interfaces.py      # IDatasetAdapter, IQueryEngine
 │   ├── adapters/              # Connettori per formati dati
-│   │   ├── detector.py        # Rilevatore automatico formato e percorsi
-│   │   ├── csv_adapter.py     # Lettore streaming CSV robusto
-│   │   ├── parquet_adapter.py # Scanner parquet ad alta efficienza
-│   │   └── xml_adapter.py     # Parser streaming XML O(1) e convertitore parquet
+│   │   ├── detector.py        # Rilevatore formato e percorsi
+│   │   ├── csv_adapter.py     # Connettore streaming CSV
+│   │   ├── parquet_adapter.py # Connettore scanner Parquet
+│   │   └── xml_adapter.py     # Parser streaming XML e convertitore parquet
 │   ├── engine/                # Motore di esecuzione DuckDB
 │   │   ├── duckdb_engine.py   # Gestione sessione DuckDB e viste streaming
 │   │   ├── query_builder.py   # Compilatore SQL parametrizzato per filtri

@@ -5,18 +5,21 @@ and download the new application binary directly.
 """
 
 from __future__ import annotations
+
 import os
 from pathlib import Path
+
 import streamlit as st
 
-from src.core.version import __version__, GITHUB_REPO
 from src.core.updater import GitHubUpdater, ReleaseInfo
+from src.core.version import GITHUB_REPO, __version__
 
 
 def render_update_checker():
     """Render update checker widget in the sidebar."""
-    st.sidebar.markdown("### 🔄 Aggiornamenti Software")
-    st.sidebar.caption(f"Versione corrente: **v{__version__}**  \nRepo: `{GITHUB_REPO}`")
+    st.sidebar.markdown("### 🔄 Aggiornamenti")
+    repo_url = f"https://github.com/{GITHUB_REPO}"
+    st.sidebar.caption(f"Versione: **v{__version__}** • [GitHub]({repo_url})")
 
     check_clicked = st.sidebar.button("Verifica Aggiornamenti", key="btn_check_updates", use_container_width=True)
 

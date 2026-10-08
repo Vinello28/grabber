@@ -21,7 +21,7 @@ def test_quote_ident():
 
 def test_text_filters():
     cols = [ColumnMeta("NOME", DataType.TEXT)]
-    
+
     # Contains
     spec = QuerySpec(filters=[FilterRule("NOME", FilterOperator.CONTAINS, "rossi")])
     where = QueryBuilder.build_where_clause(spec, cols)

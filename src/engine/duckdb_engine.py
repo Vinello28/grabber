@@ -5,25 +5,40 @@ and dynamic view registration.
 """
 
 from __future__ import annotations
+
+import logging
 import os
+import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from types import TracebackType
+from typing import Any
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
 import duckdb
 
+from src.adapters.csv_adapter import CsvAdapter
+from src.adapters.detector import DatasetDetector
+from src.adapters.parquet_adapter import ParquetAdapter
+from src.adapters.xml_adapter import XmlAdapter
 from src.core.interfaces import IQueryEngine
 from src.core.models import (
     ColumnMeta,
     DatasetSchema,
+    DataType,
     QueryResult,
     QuerySpec,
 )
-from src.adapters.detector import DatasetDetector
-from src.adapters.csv_adapter import CsvAdapter
-from src.adapters.parquet_adapter import ParquetAdapter
-from src.adapters.xml_adapter import XmlAdapter
+from src.core.paths import get_spill_dir
 from src.engine.query_builder import QueryBuilder
 from src.engine.resource_monitor import ResourceMonitor
+
+logger = logging.getLogger(__name__)
 
 
 class DuckDBEngine(IQueryEngine):
@@ -31,24 +46,23 @@ class DuckDBEngine(IQueryEngine):
 
     def __init__(
         self,
-        memory_limit: Optional[str] = None,
-        threads: Optional[int] = None,
-        temp_dir: Optional[str] = None,
+        memory_limit: str | None = None,
+        threads: int | None = None,
+        temp_dir: str | None = None,
     ):
-        self.temp_dir = Path(temp_dir or ".cache/duckdb_spill")
+        self.temp_dir = Path(temp_dir).resolve() if temp_dir else get_spill_dir()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
         self.memory_limit = memory_limit or ResourceMonitor.calculate_safe_memory_limit()
         self.threads = threads or (os.cpu_count() or 4)
 
-        # Initialize DuckDB in-memory session with disk spillover configured
         self.conn = duckdb.connect(database=":memory:")
         self._configure_connection()
 
-        self.current_schema: Optional[DatasetSchema] = None
+        self.current_schema: DatasetSchema | None = None
         self.current_view_name = "current_dataset"
-        self.current_dataset_path: Optional[str] = None
-        self.current_sql_source: Optional[str] = None
+        self.current_dataset_path: str | None = None
+        self.current_sql_source: str | None = None
 
         # Adapters
         self.csv_adapter = CsvAdapter()
@@ -59,7 +73,8 @@ class DuckDBEngine(IQueryEngine):
         """Apply performance and memory safety pragmas."""
         self.conn.execute(f"PRAGMA max_memory='{self.memory_limit}'")
         self.conn.execute(f"PRAGMA threads={self.threads}")
-        self.conn.execute(f"PRAGMA temp_directory='{str(self.temp_dir)}'")
+        safe_temp_dir = str(self.temp_dir).replace("'", "''")
+        self.conn.execute(f"PRAGMA temp_directory='{safe_temp_dir}'")
         self.conn.execute("PRAGMA preserve_insertion_order=false")
 
     def has_active_view(self) -> bool:
@@ -125,7 +140,7 @@ class DuckDBEngine(IQueryEngine):
             self.current_schema = self.xml_adapter.inspect_schema(files, self.conn)
             cache_path = self.xml_adapter.get_cache_path(files)
             if cache_path.exists() and any(cache_path.glob("**/*.parquet")):
-                sql_source = f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
+                sql_source = f"read_parquet('{cache_path!s}/**/*.parquet', union_by_name=true)"
             else:
                 # Store files on schema for potential conversion
                 sql_source = None
@@ -158,7 +173,7 @@ class DuckDBEngine(IQueryEngine):
 
     def index_xml_dataset(
         self,
-        progress_callback: Optional[Callable[[float, int, int], None]] = None,
+        progress_callback: Callable[[float, int, int], None] | None = None,
         clean_cache: bool = False,
     ) -> None:
         """Convert current XML dataset to cached Parquet files and register view."""
@@ -180,7 +195,7 @@ class DuckDBEngine(IQueryEngine):
             progress_callback=progress_callback,
         )
 
-        sql_source = f"read_parquet('{str(cache_dir)}/**/*.parquet', union_by_name=true)"
+        sql_source = f"read_parquet('{cache_dir!s}/**/*.parquet', union_by_name=true)"
         self.current_sql_source = sql_source
         self.conn.execute(f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {sql_source}")
         self.current_schema.table_identifier = self.current_view_name
@@ -196,14 +211,15 @@ class DuckDBEngine(IQueryEngine):
             for _, row in describe_df.iterrows():
                 col_name = str(row["column_name"])
                 native_type = str(row["column_type"]).upper()
-                is_num = any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                is_interval = "INTERVAL" in native_type
+                is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
                 data_type = DataType.NUMERIC if is_num else (
                     DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
                 )
                 new_columns.append(ColumnMeta(name=col_name, data_type=data_type, native_type=native_type))
             self.current_schema.columns = new_columns
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Errore durante l'aggiornamento dei metadati dello schema: %s", e)
 
     def execute_query(self, spec: QuerySpec) -> QueryResult:
         """Execute query specification and return tabular results."""
@@ -225,7 +241,7 @@ class DuckDBEngine(IQueryEngine):
         rows = df.values.tolist()
 
         is_agg = bool(spec.group_by_columns or spec.aggregations)
-        total_rows = len(rows) if (spec.limit is None or is_agg) else self.count_matching_rows(spec)
+        total_rows = len(rows) if spec.limit is None else self.count_matching_rows(spec)
 
         return QueryResult(
             columns=columns,
@@ -249,7 +265,7 @@ class DuckDBEngine(IQueryEngine):
         res = self.conn.execute(sql).fetchone()
         return res[0] if res else 0
 
-    def get_distinct_values(self, column: str, limit: int = 100) -> List[Any]:
+    def get_distinct_values(self, column: str, limit: int = 100) -> list[Any]:
         """Fetch distinct non-null values for a column."""
         self.ensure_view_exists()
         if not self.current_schema:
@@ -269,7 +285,7 @@ class DuckDBEngine(IQueryEngine):
         except Exception:
             return []
 
-    def get_column_stats(self, column: str) -> Dict[str, Any]:
+    def get_column_stats(self, column: str) -> dict[str, Any]:
         """Compute basic column statistics."""
         self.ensure_view_exists()
         if not self.current_schema:
@@ -281,7 +297,7 @@ class DuckDBEngine(IQueryEngine):
 
         if is_num:
             query = f"""
-                SELECT 
+                SELECT
                     COUNT({col_sql}) as count_non_null,
                     COUNT(DISTINCT {col_sql}) as count_distinct,
                     MIN(TRY_CAST({col_sql} AS DOUBLE)) as min_val,
@@ -291,7 +307,7 @@ class DuckDBEngine(IQueryEngine):
             """
         else:
             query = f"""
-                SELECT 
+                SELECT
                     COUNT({col_sql}) as count_non_null,
                     COUNT(DISTINCT {col_sql}) as count_distinct,
                     NULL as min_val,
@@ -319,7 +335,7 @@ class DuckDBEngine(IQueryEngine):
         spec: QuerySpec,
         output_file: str,
         export_format: str = "csv",
-        progress_callback: Optional[Callable[[float], None]] = None,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> int:
         """
         Stream export query results directly to disk without loading into memory.
@@ -333,8 +349,6 @@ class DuckDBEngine(IQueryEngine):
         out_path = Path(output_file)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        count_matching = self.count_matching_rows(spec)
-
         sql = QueryBuilder.build_export_query(
             self.current_view_name,
             spec,
@@ -343,8 +357,36 @@ class DuckDBEngine(IQueryEngine):
             schema_columns=self.current_schema.columns,
         )
 
-        self.conn.execute(sql)
+        res = self.conn.execute(sql).fetchone()
+        exported_count = int(res[0]) if res and res[0] is not None else 0
+
         if progress_callback:
             progress_callback(1.0)
 
-        return count_matching
+        return exported_count
+
+    def close(self) -> None:
+        """Release DuckDB connection and clean up temporary spill directory."""
+        try:
+            if hasattr(self, "conn") and self.conn:
+                self.conn.close()
+                self.conn = None  # type: ignore[assignment]
+        except Exception as e:
+            logger.debug("Errore chiusura connessione DuckDB: %s", e)
+        try:
+            import shutil
+            if hasattr(self, "temp_dir") and self.temp_dir.exists():
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+        except Exception as e:
+            logger.debug("Errore rimozione temp_dir: %s", e)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()

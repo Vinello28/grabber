@@ -3,22 +3,24 @@ Cross-platform native system file and folder picker.
 Opens native OS dialogs (Finder on macOS, File Explorer on Windows, Zenity/Tkinter on Linux).
 """
 
-import sys
-import os
 import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
 
 
-def pick_system_folder(title: str = "Seleziona Cartella Dataset") -> Optional[str]:
+def pick_system_folder(title: str = "Seleziona Cartella Dataset") -> str | None:
     """Open native system folder selection dialog."""
     # 1. macOS Native AppleScript dialog
     if sys.platform == "darwin":
         try:
-            script = f'POSIX path of (choose folder with prompt "{title}")'
-            res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
+            script = f'POSIX path of (choose folder with prompt "{escaped_title}")'
+            res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
             if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip().rstrip("/")
+            # If user explicitly canceled in AppleScript, don't fallback to Tkinter
+            if "canceled" in res.stderr.lower() or "cancelled" in res.stderr.lower() or "-128" in res.stderr:
+                return None
         except Exception:
             pass
 
@@ -40,15 +42,19 @@ def pick_system_folder(title: str = "Seleziona Cartella Dataset") -> Optional[st
     return None
 
 
-def pick_system_file(title: str = "Seleziona File Dataset") -> Optional[str]:
+def pick_system_file(title: str = "Seleziona File Dataset") -> str | None:
     """Open native system file selection dialog."""
     # 1. macOS Native AppleScript dialog
     if sys.platform == "darwin":
         try:
-            script = f'POSIX path of (choose file with prompt "{title}")'
-            res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
+            script = f'POSIX path of (choose file with prompt "{escaped_title}")'
+            res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
             if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip()
+            # If user explicitly canceled in AppleScript, don't fallback to Tkinter
+            if "canceled" in res.stderr.lower() or "cancelled" in res.stderr.lower() or "-128" in res.stderr:
+                return None
         except Exception:
             pass
 

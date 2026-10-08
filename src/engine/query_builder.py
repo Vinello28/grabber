@@ -5,10 +5,12 @@ vectorized SQL expressions with type safety and escaping.
 """
 
 from __future__ import annotations
-from typing import List, Optional, Tuple
+
+import math
+import re
+
 from src.core.models import (
     AggregationFunc,
-    AggregationRule,
     ColumnMeta,
     DataType,
     FilterOperator,
@@ -35,10 +37,10 @@ class QueryBuilder:
     def build_where_clause(
         cls,
         spec: QuerySpec,
-        schema_columns: Optional[List[ColumnMeta]] = None,
+        schema_columns: list[ColumnMeta] | None = None,
     ) -> str:
         """Compile filters and global search into a single WHERE clause."""
-        predicates: List[str] = []
+        predicates: list[str] = []
 
         # 1. Global Search
         if spec.global_search and spec.global_search.strip():
@@ -95,7 +97,7 @@ class QueryBuilder:
         f: FilterRule,
         col_sql: str,
         is_numeric: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Translate a single FilterRule into an SQL condition."""
         op = f.operator
         val = f.value
@@ -109,7 +111,7 @@ class QueryBuilder:
         if val is None or (isinstance(val, str) and not val.strip()):
             return None
 
-        # Clean string value: strip outer quotes and whitespace for robust text queries
+        # Strip outer quotes and whitespace
         clean_val = str(val).strip().strip('"\'“”‘’«»`').strip()
         if not clean_val:
             return None
@@ -143,7 +145,8 @@ class QueryBuilder:
             if is_numeric:
                 try:
                     num_val = float(str(val).replace(",", "."))
-                    return f"TRY_CAST({col_sql} AS DOUBLE) = {num_val}"
+                    if math.isfinite(num_val):
+                        return f"TRY_CAST({col_sql} AS DOUBLE) = {num_val}"
                 except ValueError:
                     pass
             esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
@@ -154,7 +157,8 @@ class QueryBuilder:
             if is_numeric:
                 try:
                     num_val = float(str(val).replace(",", "."))
-                    return f"(TRY_CAST({col_sql} AS DOUBLE) != {num_val} OR {col_sql} IS NULL)"
+                    if math.isfinite(num_val):
+                        return f"TRY_CAST({col_sql} AS DOUBLE) IS DISTINCT FROM {num_val}"
                 except ValueError:
                     pass
             esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
@@ -162,7 +166,12 @@ class QueryBuilder:
             return f"({col_sql} IS NULL OR {base} != '{esc}')"
 
         if op == FilterOperator.REGEX:
-            esc = cls.escape_str_literal(str(val).strip())
+            raw_regex = str(val).strip()
+            try:
+                re.compile(raw_regex)
+            except re.error:
+                return None
+            esc = cls.escape_str_literal(raw_regex)
             flags = "" if f.case_sensitive else "(?i)"
             return f"regexp_matches(CAST({col_sql} AS VARCHAR), '{flags}{esc}')"
 
@@ -170,27 +179,38 @@ class QueryBuilder:
         if op in (FilterOperator.GT, FilterOperator.GTE, FilterOperator.LT, FilterOperator.LTE):
             try:
                 num_val = float(str(val).replace(",", "."))
+                if not math.isfinite(num_val):
+                    return None
                 return f"TRY_CAST({col_sql} AS DOUBLE) {op.value} {num_val}"
             except ValueError:
                 return None
 
         if op == FilterOperator.BETWEEN:
             try:
-                min_v = float(str(val).replace(",", "."))
-                max_v = float(str(f.value_to).replace(",", "."))
+                if f.value_to is not None:
+                    raw_min, raw_max = val, f.value_to
+                elif isinstance(val, (tuple, list)) and len(val) == 2:
+                    raw_min, raw_max = val[0], val[1]
+                else:
+                    return None
+                min_v = float(str(raw_min).replace(",", "."))
+                max_v = float(str(raw_max).replace(",", "."))
+                if not (math.isfinite(min_v) and math.isfinite(max_v)):
+                    return None
+                if min_v > max_v:
+                    min_v, max_v = max_v, min_v
                 return f"TRY_CAST({col_sql} AS DOUBLE) BETWEEN {min_v} AND {max_v}"
             except (ValueError, TypeError):
                 return None
 
         # Categorical lists
-        if op in (FilterOperator.IN_LIST, FilterOperator.NOT_IN_LIST):
-            if isinstance(val, (list, tuple, set)) and len(val) > 0:
-                esc_items = [f"'{cls.escape_str_literal(str(item))}'" for item in val]
-                items_str = ", ".join(esc_items)
-                if op == FilterOperator.IN_LIST:
-                    return f"CAST({col_sql} AS VARCHAR) IN ({items_str})"
-                else:
-                    return f"({col_sql} IS NULL OR CAST({col_sql} AS VARCHAR) NOT IN ({items_str}))"
+        if op in (FilterOperator.IN_LIST, FilterOperator.NOT_IN_LIST) and isinstance(val, (list, tuple, set)) and len(val) > 0:
+            esc_items = [f"'{cls.escape_str_literal(str(item))}'" for item in val]
+            items_str = ", ".join(esc_items)
+            if op == FilterOperator.IN_LIST:
+                return f"CAST({col_sql} AS VARCHAR) IN ({items_str})"
+            else:
+                return f"({col_sql} IS NULL OR CAST({col_sql} AS VARCHAR) NOT IN ({items_str}))"
 
         return None
 
@@ -199,7 +219,7 @@ class QueryBuilder:
         cls,
         table_ref: str,
         spec: QuerySpec,
-        schema_columns: Optional[List[ColumnMeta]] = None,
+        schema_columns: list[ColumnMeta] | None = None,
     ) -> str:
         """Compile a full SELECT query with filtering, grouping, sorting, and pagination."""
         where_clause = cls.build_where_clause(spec, schema_columns)
@@ -209,10 +229,11 @@ class QueryBuilder:
             return cls._build_aggregated_query(table_ref, spec, where_clause)
 
         # Standard projection query
-        if spec.selected_columns:
-            select_cols = ", ".join(cls.quote_ident(c) for c in spec.selected_columns)
-        else:
-            select_cols = "*"
+        select_cols = (
+            ", ".join(cls.quote_ident(c) for c in spec.selected_columns)
+            if spec.selected_columns
+            else "*"
+        )
 
         query = f"SELECT {select_cols} FROM {table_ref} {where_clause}".strip()
 
@@ -240,8 +261,8 @@ class QueryBuilder:
         where_clause: str,
     ) -> str:
         """Build GROUP BY with aggregations."""
-        select_parts: List[str] = []
-        group_by_parts: List[str] = []
+        select_parts: list[str] = []
+        group_by_parts: list[str] = []
 
         if spec.group_by_columns:
             for col in spec.group_by_columns:
@@ -296,9 +317,9 @@ class QueryBuilder:
         if func == AggregationFunc.AVG:
             return f"ROUND(AVG(TRY_CAST({col_quoted} AS DOUBLE)), 2)"
         if func == AggregationFunc.MIN:
-            return f"MIN(TRY_CAST({col_quoted} AS DOUBLE))"
+            return f"MIN({col_quoted})"
         if func == AggregationFunc.MAX:
-            return f"MAX(TRY_CAST({col_quoted} AS DOUBLE))"
+            return f"MAX({col_quoted})"
         return f"COUNT({col_quoted})"
 
     @classmethod
@@ -306,12 +327,21 @@ class QueryBuilder:
         cls,
         table_ref: str,
         spec: QuerySpec,
-        schema_columns: Optional[List[ColumnMeta]] = None,
+        schema_columns: list[ColumnMeta] | None = None,
     ) -> str:
         """Build query to count matching rows without fetching them."""
         where_clause = cls.build_where_clause(spec, schema_columns)
         if spec.group_by_columns or spec.aggregations:
-            sub = cls._build_aggregated_query(table_ref, spec, where_clause)
+            count_spec = QuerySpec(
+                filters=spec.filters,
+                global_search=spec.global_search,
+                global_search_columns=spec.global_search_columns,
+                group_by_columns=spec.group_by_columns,
+                aggregations=spec.aggregations,
+                limit=None,
+                offset=None,
+            )
+            sub = cls._build_aggregated_query(table_ref, count_spec, where_clause)
             return f"SELECT COUNT(*) FROM ({sub}) AS subquery"
         return f"SELECT COUNT(*) FROM {table_ref} {where_clause}".strip()
 
@@ -322,7 +352,7 @@ class QueryBuilder:
         spec: QuerySpec,
         output_path: str,
         export_format: str = "csv",
-        schema_columns: Optional[List[ColumnMeta]] = None,
+        schema_columns: list[ColumnMeta] | None = None,
     ) -> str:
         """
         Build an out-of-core COPY query for direct streaming export to disk.

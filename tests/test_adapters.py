@@ -2,9 +2,8 @@
 Unit tests for data adapters (CSV, Parquet, XML, Detector).
 """
 
-import os
-from src.adapters.detector import DatasetDetector
 from src.adapters.csv_adapter import CsvAdapter
+from src.adapters.detector import DatasetDetector
 from src.adapters.xml_adapter import XmlAdapter
 
 

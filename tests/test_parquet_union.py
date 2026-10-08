@@ -6,6 +6,7 @@ do not fail queries or exports.
 
 import os
 from pathlib import Path
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -13,8 +14,8 @@ import pytest
 
 from src.adapters.parquet_adapter import ParquetAdapter
 from src.adapters.xml_adapter import XmlAdapter
-from src.engine.duckdb_engine import DuckDBEngine
 from src.core.models import QuerySpec
+from src.engine.duckdb_engine import DuckDBEngine
 
 
 def test_parquet_adapter_union_by_name(tmp_path: Path):
@@ -93,7 +94,9 @@ def test_heterogeneous_parquet_chunks_query_and_export(tmp_path: Path):
 
 def test_cached_xml_export_with_atto_concessione(tmp_path: Path):
     """Test directly against the cached XML dataset with 22 files and differing schemas."""
-    cache_dir = Path(".cache/parquet_cache/xml_be9386a025b6")
+    from src.core.paths import get_parquet_cache_dir
+
+    cache_dir = get_parquet_cache_dir() / "xml_be9386a025b6"
     if not cache_dir.exists():
         pytest.skip("Cache directory xml_be9386a025b6 does not exist")
 

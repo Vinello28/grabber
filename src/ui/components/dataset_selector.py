@@ -4,12 +4,14 @@ Allows users to load CSV, Parquet, or XML datasets from local paths or presets.
 """
 
 import os
-from pathlib import Path
+import sys
+
 import streamlit as st
-from src.engine.duckdb_engine import DuckDBEngine
-from src.core.models import DatasetSchema
+
 from src.adapters.detector import DatasetDetector
-from src.ui.file_picker import pick_system_folder, pick_system_file
+from src.core.models import DatasetSchema
+from src.engine.duckdb_engine import DuckDBEngine
+from src.ui.file_picker import pick_system_file, pick_system_folder
 from src.ui.state_manager import reset_dataset_ui_state
 
 
@@ -36,21 +38,24 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
                 st.session_state["trigger_load"] = True
                 st.rerun()
 
-    # Preset quick-load buttons
-    presets = {
-        "CSV Test (13.5 GB)": "data/test1",
-        "XML Annihilation (62 GB)": "data/annihilation_test",
-    }
+    # Quick test presets (development mode only, excluded in production)
+    is_prod = getattr(sys, "frozen", False) or os.getenv("GRABBER_ENV", "").lower() == "production"
+    if not is_prod:
+        presets = {
+            "Test CSV": "data/test1",
+            "Test XML": "data/annihilation_test",
+        }
+        available_presets = {k: v for k, v in presets.items() if os.path.exists(v)}
+        if available_presets:
+            st.sidebar.caption("Scorciatoie test (Dev):")
+            preset_cols = st.sidebar.columns(len(available_presets))
+            for i, (name, path) in enumerate(available_presets.items()):
+                if preset_cols[i].button(name, key=f"preset_{i}", use_container_width=True):
+                    st.session_state["dataset_path"] = path
+                    st.session_state["trigger_load"] = True
 
-    st.sidebar.caption("Scorciatoie veloci:")
-    preset_cols = st.sidebar.columns(len(presets))
-    for i, (name, path) in enumerate(presets.items()):
-        if os.path.exists(path):
-            if preset_cols[i].button(name, key=f"preset_{i}", use_container_width=True):
-                st.session_state["dataset_path"] = path
-                st.session_state["trigger_load"] = True
-
-    current_path = st.session_state.get("dataset_path", "data/test1")
+    default_path = "" if is_prod else ("data/test1" if os.path.exists("data/test1") else "")
+    current_path = st.session_state.get("dataset_path", default_path)
     path_input = st.sidebar.text_input(
         "Percorso file o cartella:",
         value=current_path,
@@ -66,33 +71,34 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
         with st.sidebar.status("Connessione e scansione schema in corso...", expanded=True) as status:
             try:
                 reset_dataset_ui_state()
-                schema = engine.connect_dataset(path_input)
-                st.session_state["schema"] = schema
+                loaded_schema = engine.connect_dataset(path_input)
+                st.session_state["schema"] = loaded_schema
                 st.session_state["active_dataset_path"] = path_input
                 status.update(label="Dataset caricato con successo!", state="complete", expanded=False)
             except Exception as e:
                 status.update(label="Errore nel caricamento", state="error", expanded=True)
-                st.sidebar.error(f"Errore: {str(e)}")
+                st.sidebar.error(f"Errore: {e!s}")
+                st.session_state["schema"] = None
+                st.session_state["active_dataset_path"] = None
                 return None
 
-    # Guarantee in-memory DuckDB view is synchronized if session state has a dataset
-    if current_path and (not engine.has_active_view() or engine.current_dataset_path != current_path):
-        if os.path.exists(current_path):
-            try:
-                if st.session_state.get("active_dataset_path") != current_path:
-                    reset_dataset_ui_state()
-                schema = engine.connect_dataset(current_path)
-                st.session_state["schema"] = schema
-                st.session_state["active_dataset_path"] = current_path
-            except Exception:
-                pass
+    # Sync in-memory DuckDB view if session state has a dataset
+    if current_path and (not engine.has_active_view() or engine.current_dataset_path != current_path) and os.path.exists(current_path):
+        try:
+            if st.session_state.get("active_dataset_path") != current_path:
+                reset_dataset_ui_state()
+            synced_schema = engine.connect_dataset(current_path)
+            st.session_state["schema"] = synced_schema
+            st.session_state["active_dataset_path"] = current_path
+        except Exception:
+            pass
 
-    schema: DatasetSchema | None = st.session_state.get("schema")
+    active_schema: DatasetSchema | None = st.session_state.get("schema")
 
-    if schema:
+    if active_schema:
         # Check XML indexing status
-        if schema.source_format == "xml":
-            analysis = DatasetDetector.analyze_path(schema.source_path)
+        if active_schema.source_format == "xml":
+            analysis = DatasetDetector.analyze_path(active_schema.source_path)
             total_xml_files = len(analysis["files"])
             cache_path = engine.xml_adapter.get_cache_path(analysis["files"])
 
@@ -106,7 +112,7 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
                         pass
 
             indexed_count = len(existing_parts)
-            is_fully_indexed = (indexed_count >= total_xml_files and total_xml_files > 0)
+            is_fully_indexed = (indexed_count >= total_xml_files > 0)
 
             if not is_fully_indexed:
                 if indexed_count > 0:
@@ -123,29 +129,29 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
                     btn_label = "⚡ Indicizza XML in Parquet (Multi-Core)"
 
                 if st.sidebar.button(btn_label, type="primary", use_container_width=True):
-                    _run_xml_indexing(engine, schema, clean_cache=(indexed_count > 0))
+                    _run_xml_indexing(engine, active_schema, clean_cache=(indexed_count > 0))
             else:
                 st.sidebar.success(f"⚡ **Cache Parquet attiva**: {total_xml_files}/{total_xml_files} file indicizzati.")
                 with st.sidebar.expander("🔄 Re-indicizza / Aggiorna Cache XML", expanded=False):
                     st.caption("Usa questo pulsante per rigenerare la cache Parquet da zero.")
                     if st.button("Riavvia indicizzazione XML da zero", key="btn_reindex_xml", use_container_width=True):
-                        _run_xml_indexing(engine, schema, clean_cache=True)
+                        _run_xml_indexing(engine, active_schema, clean_cache=True)
 
         # Display metadata card
         st.sidebar.markdown("---")
-        st.sidebar.markdown(f"**Formato:** `{schema.source_format.upper()}`")
-        st.sidebar.markdown(f"**File totali:** `{schema.file_count}`")
-        if schema.total_size_bytes:
-            size_gb = schema.total_size_bytes / (1024 ** 3)
-            size_mb = schema.total_size_bytes / (1024 ** 2)
+        st.sidebar.markdown(f"**Formato:** `{active_schema.source_format.upper()}`")
+        st.sidebar.markdown(f"**File totali:** `{active_schema.file_count}`")
+        if active_schema.total_size_bytes:
+            size_gb = active_schema.total_size_bytes / (1024 ** 3)
+            size_mb = active_schema.total_size_bytes / (1024 ** 2)
             size_str = f"{size_gb:.2f} GB" if size_gb >= 1.0 else f"{size_mb:.1f} MB"
             st.sidebar.markdown(f"**Dimensione su disco:** `{size_str}`")
-        if schema.row_count_estimate:
-            st.sidebar.markdown(f"**Righe stimate:** `{schema.row_count_estimate:,}`")
-        st.sidebar.markdown(f"**Colonne:** `{len(schema.columns)}`")
+        if active_schema.row_count_estimate:
+            st.sidebar.markdown(f"**Righe stimate:** `{active_schema.row_count_estimate:,}`")
+        st.sidebar.markdown(f"**Colonne:** `{len(active_schema.columns)}`")
 
     st.sidebar.divider()
-    return schema
+    return active_schema
 
 
 def _run_xml_indexing(engine: DuckDBEngine, schema: DatasetSchema, clean_cache: bool = False) -> None:

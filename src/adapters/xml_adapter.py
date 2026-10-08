@@ -1,37 +1,40 @@
 """
-High-performance streaming XML Adapter for out-of-core data access.
-Uses lxml iterparse with parent-node clearing to maintain flat O(1) memory (<30MB)
-even when processing 70+ GB of XML files.
+Streaming XML Adapter for out-of-core data access.
+Uses lxml iterparse with element clearing to stream large XML datasets.
 """
 
 from __future__ import annotations
+
+import contextlib
+import logging
 import os
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Set, Tuple
+from typing import Any
+
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 from lxml import etree
-import duckdb
 
 from src.core.interfaces import IDatasetAdapter
-from src.core.models import ColumnMeta, DataType, DatasetSchema, FilterRule, FilterOperator
+from src.core.models import ColumnMeta, DatasetSchema, DataType
+from src.core.paths import get_parquet_cache_dir
+
+logger = logging.getLogger(__name__)
 
 
 class XmlAdapter(IDatasetAdapter):
-    """
-    Streaming XML Adapter with O(1) memory footprint.
-    Supports dataset-agnostic inspection, on-the-fly streaming filtering,
-    and chunked streaming conversion to Parquet.
-    """
+    """Streaming XML Adapter with on-the-fly streaming filtering and Parquet conversion."""
 
-    def __init__(self, record_tag: Optional[str] = None):
+    def __init__(self, record_tag: str | None = None, cache_dir: Path | None = None):
         self.record_tag = record_tag
-        self._cache_dir = Path(".cache/parquet_cache")
+        self._cache_dir = cache_dir or get_parquet_cache_dir()
 
     def can_handle(self, path: str) -> bool:
         return path.lower().endswith(".xml")
 
-    def get_source_description(self, path: str) -> Dict[str, Any]:
+    def get_source_description(self, path: str) -> dict[str, Any]:
         return {"format": "xml"}
 
     def _strip_ns(self, tag: str) -> str:
@@ -48,10 +51,10 @@ class XmlAdapter(IDatasetAdapter):
         if self.record_tag:
             return self.record_tag
 
-        candidate_counts: Dict[str, int] = {}
+        candidate_counts: dict[str, int] = {}
         try:
             context = etree.iterparse(sample_file, events=("end",))
-            for i, (event, elem) in enumerate(context):
+            for _i, (_event, elem) in enumerate(context):
                 parent = elem.getparent()
                 # Direct child of root element has parent.getparent() is None
                 if parent is not None and parent.getparent() is None:
@@ -67,20 +70,17 @@ class XmlAdapter(IDatasetAdapter):
             pass
 
         if candidate_counts:
-            best_tag = max(candidate_counts, key=candidate_counts.get)
+            best_tag = max(candidate_counts, key=lambda k: candidate_counts[k])
             return best_tag
         return "AIUTO"
 
     def iter_records(
         self,
         xml_file: str,
-        target_tag: Optional[str] = None,
-        max_records: Optional[int] = None,
-    ) -> Generator[Dict[str, Any], None, None]:
-        """
-        Streamingly yield parsed records as flat dictionaries.
-        Keeps memory usage strictly O(1) by pruning previous DOM nodes.
-        """
+        target_tag: str | None = None,
+        max_records: int | None = None,
+    ) -> Generator[dict[str, Any], None, None]:
+        """Stream parsed records as flat dictionaries."""
         if target_tag is None:
             target_tag = self.detect_record_tag(xml_file)
 
@@ -88,10 +88,9 @@ class XmlAdapter(IDatasetAdapter):
         count = 0
         file_basename = os.path.basename(xml_file)
 
-        # Use fast iterparse
         try:
             context = etree.iterparse(xml_file, events=("end",))
-            for event, elem in context:
+            for _event, elem in context:
                 tag_name = self._strip_ns(elem.tag)
                 if tag_name.upper() == target_tag_upper:
                     record = self._flatten_element(elem)
@@ -105,16 +104,24 @@ class XmlAdapter(IDatasetAdapter):
 
                     if max_records and count >= max_records:
                         break
+                else:
+                    parent = elem.getparent()
+                    if parent is not None and parent.getparent() is None:
+                        elem.clear()
+                        while elem.getprevious() is not None:
+                            del elem.getparent()[0]
+        except (etree.XMLSyntaxError, EOFError) as e:
+            logger.debug("Fine flusso o limite raggiunto su %s: %s", xml_file, e)
         except Exception as e:
-            # Yield gracefully on EOF or parse boundary
-            pass
+            logger.warning("Errore durante la lettura streaming XML %s: %s", xml_file, e)
+            raise
 
-    def _flatten_element(self, elem: etree._Element) -> Dict[str, Any]:
+    def _flatten_element(self, elem: etree._Element) -> dict[str, Any]:
         """
         Flatten an XML element into key-value pairs.
         Extracts leaf elements, and calculates summary metrics for nested lists.
         """
-        row: Dict[str, Any] = {}
+        row: dict[str, Any] = {}
         nested_components = 0
         nested_instruments = 0
         nominal_import = 0.0
@@ -122,29 +129,24 @@ class XmlAdapter(IDatasetAdapter):
 
         for child in elem:
             child_tag = self._strip_ns(child.tag)
-            
+
             # Check for nested sub-lists like COMPONENTI_AIUTO
             if len(child) > 0:
                 # Sub-tree: check if it contains components or instruments
                 for sub in child.iter():
                     sub_tag = self._strip_ns(sub.tag).upper()
-                    if "COMPONENTE_AIUTO" == sub_tag:
+                    if sub_tag == "COMPONENTE_AIUTO":
                         nested_components += 1
-                    elif "STRUMENTO_AIUTO" == sub_tag:
+                    elif sub_tag == "STRUMENTO_AIUTO":
                         nested_instruments += 1
                     elif sub_tag == "IMPORTO_NOMINALE" and sub.text:
-                        try:
+                        with contextlib.suppress(ValueError):
                             nominal_import += float(sub.text.strip())
-                        except ValueError:
-                            pass
                     elif sub_tag == "ELEMENTO_DI_AIUTO" and sub.text:
-                        try:
+                        with contextlib.suppress(ValueError):
                             aid_import += float(sub.text.strip())
-                        except ValueError:
-                            pass
-                    elif sub_tag in ("SETTORE_ATTIVITA", "DES_OBIETTIVO", "COD_STRUMENTO"):
-                        if sub.text and child_tag not in row:
-                            row[sub_tag] = sub.text.strip()
+                    elif sub_tag in ("SETTORE_ATTIVITA", "DES_OBIETTIVO", "COD_STRUMENTO") and sub.text and child_tag not in row:
+                        row[sub_tag] = sub.text.strip()
             else:
                 text_val = child.text.strip() if child.text else None
                 row[child_tag] = text_val
@@ -168,7 +170,8 @@ class XmlAdapter(IDatasetAdapter):
         """
         cache_path = self.get_cache_path(path_or_files)
         if cache_path.exists():
-            return f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
+            safe_cache = str(cache_path.resolve()).replace("'", "''")
+            return f"read_parquet('{safe_cache}/**/*.parquet', union_by_name=true)"
         raise RuntimeError("XML dataset must be indexed/cached to Parquet for direct SQL query execution.")
 
     def get_cache_path(self, path_or_files: Any) -> Path:
@@ -182,11 +185,7 @@ class XmlAdapter(IDatasetAdapter):
         return self._cache_dir / f"xml_{path_hash}"
 
     def inspect_schema(self, path_or_files: Any, duckdb_conn: duckdb.DuckDBPyConnection) -> DatasetSchema:
-        """
-        Inspect XML schema. If Parquet cache exists, inspects unified columnar schema
-        with union_by_name=true. Otherwise streams sample records from the first XML file.
-        Fast and uses < 25MB of RAM.
-        """
+        """Inspect XML schema from Parquet cache if available, or sample records."""
         if isinstance(path_or_files, list):
             sample_file = path_or_files[0]
             file_count = len(path_or_files)
@@ -203,24 +202,26 @@ class XmlAdapter(IDatasetAdapter):
 
         # If already indexed, retrieve rich unified schema directly from Parquet files
         if has_cache:
-            sql_source = f"read_parquet('{str(cache_path)}/**/*.parquet', union_by_name=true)"
+            safe_cache = str(cache_path.resolve()).replace("'", "''")
+            sql_source = f"read_parquet('{safe_cache}/**/*.parquet', union_by_name=true)"
             try:
                 describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
                 sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
                 count_res = duckdb_conn.execute(f"SELECT COUNT(*) FROM {sql_source}").fetchone()
                 total_rows = count_res[0] if count_res else None
 
-                columns: List[ColumnMeta] = []
+                columns: list[ColumnMeta] = []
                 for _, row in describe_df.iterrows():
                     col_name = str(row["column_name"])
                     native_type = str(row["column_type"]).upper()
-                    is_num = any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                    is_interval = "INTERVAL" in native_type
+                    is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
                     data_type = DataType.NUMERIC if is_num else (
                         DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
                     )
                     sample_vals = []
                     if col_name in sample_df:
-                        sample_vals = [v for v in sample_df[col_name].dropna().unique()[:5].tolist()]
+                        sample_vals = list(sample_df[col_name].dropna().unique()[:5])
 
                     columns.append(
                         ColumnMeta(
@@ -240,8 +241,8 @@ class XmlAdapter(IDatasetAdapter):
                     file_count=file_count,
                     table_identifier=sql_source,
                 )
-            except Exception:
-                pass  # Fallback to XML sampling if cache is partially invalid
+            except Exception as e:
+                logger.debug("Ispezione cache Parquet non riuscita, fallback a XML: %s", e)
 
         target_tag = self.detect_record_tag(sample_file)
         sample_records = list(self.iter_records(sample_file, target_tag=target_tag, max_records=200))
@@ -250,7 +251,7 @@ class XmlAdapter(IDatasetAdapter):
             raise ValueError(f"Could not extract records from XML: {sample_file}")
 
         # Collect all seen field names and sample values
-        field_samples: Dict[str, List[Any]] = {}
+        field_samples: dict[str, list[Any]] = {}
         for rec in sample_records:
             for k, v in rec.items():
                 if k not in field_samples:
@@ -258,13 +259,13 @@ class XmlAdapter(IDatasetAdapter):
                 if v is not None and len(field_samples[k]) < 5 and v not in field_samples[k]:
                     field_samples[k].append(v)
 
-        columns: List[ColumnMeta] = []
+        parsed_columns: list[ColumnMeta] = []
         for col_name, samples in field_samples.items():
             # Infer data type from sample values
             data_type = self._infer_field_type(col_name, samples)
             native_type = "DOUBLE" if data_type == DataType.NUMERIC else "VARCHAR"
 
-            columns.append(
+            parsed_columns.append(
                 ColumnMeta(
                     name=col_name,
                     data_type=data_type,
@@ -274,20 +275,21 @@ class XmlAdapter(IDatasetAdapter):
             )
 
         # Estimate row count based on sample average record byte size
-        avg_record_bytes = max(100, int(os.path.getsize(sample_file) / (len(sample_records) * 3 + 1)))
+        sample_bytes = sum(len(str(r).encode("utf-8")) for r in sample_records)
+        avg_record_bytes = max(100, int(sample_bytes / len(sample_records))) if sample_records else 500
         estimated_rows = int(total_size / avg_record_bytes) if avg_record_bytes > 0 else None
 
         return DatasetSchema(
             source_path=source_path,
             source_format="xml",
-            columns=columns,
+            columns=parsed_columns,
             row_count_estimate=estimated_rows,
             total_size_bytes=total_size,
             file_count=file_count,
             table_identifier="xml_source",
         )
 
-    def _infer_field_type(self, name: str, samples: List[Any]) -> DataType:
+    def _infer_field_type(self, name: str, samples: list[Any]) -> DataType:
         name_upper = name.upper()
         if any(kw in name_upper for kw in ["IMPORTO", "NUM_", "TOTALE", "ELEMENTO_DI_AIUTO", "ANNO"]):
             return DataType.NUMERIC
@@ -312,17 +314,13 @@ class XmlAdapter(IDatasetAdapter):
 
     def convert_to_parquet_streaming(
         self,
-        files: List[str],
-        output_dir: Optional[Path] = None,
+        files: list[str],
+        output_dir: Path | None = None,
         chunk_size: int = 50000,
-        progress_callback: Optional[Callable[[float, int, int], None]] = None,
-        max_workers: Optional[int] = None,
+        progress_callback: Callable[[float, int, int], None] | None = None,
+        max_workers: int | None = None,
     ) -> Path:
-        """
-        Convert XML files to partitioned Parquet files in streaming batches.
-        Uses multi-process parallelism (cores - 2) for maximum throughput
-        while maintaining strictly bounded flat RAM usage per worker.
-        """
+        """Convert XML files to partitioned Parquet files in streaming batches."""
         if output_dir is None:
             output_dir = self.get_cache_path(files)
 
@@ -378,7 +376,7 @@ class XmlAdapter(IDatasetAdapter):
                         progress_callback(frac, processed_bytes, total_rows_converted)
 
         except Exception:
-            # Resilient fallback: sequential execution if process pool encounters environment issues
+            # Fallback to sequential execution if process pool fails
             processed_bytes = 0
             total_rows_converted = 0
             for file_idx, fpath in enumerate(files):
@@ -395,7 +393,7 @@ class XmlAdapter(IDatasetAdapter):
 
     def _write_parquet_batch(
         self,
-        batch: List[Dict[str, Any]],
+        batch: list[dict[str, Any]],
         output_dir: Path,
         file_idx: int,
         part_idx: int,
@@ -414,7 +412,7 @@ def _convert_single_xml_worker(
     output_dir_str: str,
     target_tag: str,
     chunk_size: int = 50000,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Independent worker function for multi-process XML-to-Parquet conversion.
     Parses a single XML file in streaming fashion and writes Parquet parts.
@@ -425,7 +423,7 @@ def _convert_single_xml_worker(
     file_size = os.path.getsize(fpath)
     total_rows = 0
     part_idx = 0
-    batch: List[Dict[str, Any]] = []
+    batch: list[dict[str, Any]] = []
 
     for record in adapter.iter_records(fpath, target_tag=target_tag):
         batch.append(record)

@@ -1,10 +1,11 @@
 @echo off
 REM Grabber Launcher for Windows
+chcp 65001 >nul
 
 cd /d "%~dp0"
 
 echo ============================================================
-echo ⚡ Avvio di Grabber (Windows)...
+echo Avvio di Grabber (Windows)...
 echo ============================================================
 
 IF EXIST ".venv\Scripts\activate.bat" (

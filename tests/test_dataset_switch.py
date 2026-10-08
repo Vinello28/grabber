@@ -4,12 +4,13 @@ Verifies that switching between datasets with differing schemas (e.g. CSV with '
 and XML without 'ANNO') does not trigger StreamlitDefaultNotInOptionsError.
 """
 
-import pytest
 import streamlit as st
-from streamlit.elements.lib.options_selector_utils import get_default_indices, check_and_convert_to_indices
+from streamlit.elements.lib.options_selector_utils import (
+    check_and_convert_to_indices,
+    get_default_indices,
+)
 
-from src.core.models import DatasetSchema, ColumnMeta, DataType
-from src.ui.state_manager import reset_dataset_ui_state, DATASET_DEPENDENT_KEYS
+from src.ui.state_manager import DATASET_DEPENDENT_KEYS, reset_dataset_ui_state
 
 
 def test_reset_dataset_ui_state():

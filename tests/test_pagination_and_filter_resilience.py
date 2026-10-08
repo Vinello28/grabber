@@ -4,11 +4,11 @@ Verifies that navigating pages via pagination buttons or handling empty/transien
 never triggers IndexError on schema.columns[0].
 """
 
-import pytest
 import streamlit as st
-from src.core.models import DatasetSchema, ColumnMeta, DataType, FilterOperator
-from src.ui.components.filter_battery import render_filter_battery
+
+from src.core.models import DatasetSchema, FilterOperator
 from src.engine.duckdb_engine import DuckDBEngine
+from src.ui.components.filter_battery import render_filter_battery
 
 
 def test_render_filter_battery_empty_schema():

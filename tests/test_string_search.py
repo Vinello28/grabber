@@ -3,18 +3,18 @@ Unit and integration tests for string search, quote sanitization,
 multi-token search, and pagination offset recovery.
 """
 
-import pytest
 import duckdb
+import pytest
+
 from src.core.models import (
     ColumnMeta,
     DataType,
     FilterOperator,
     FilterRule,
     QuerySpec,
-    QueryResult,
 )
-from src.engine.query_builder import QueryBuilder
 from src.engine.duckdb_engine import DuckDBEngine
+from src.engine.query_builder import QueryBuilder
 
 
 def test_quote_and_whitespace_sanitization_in_filter():
@@ -156,11 +156,13 @@ def test_duckdb_engine_drops_stale_view_on_unindexed_xml(tmp_path):
     engine = DuckDBEngine()
     # First connect test1 (CSV)
     schema_csv = engine.connect_dataset("data/test1")
+    assert schema_csv.file_count > 0
     assert engine.has_active_view()
     assert engine.current_sql_source is not None
 
     # Now connect unindexed XML
     schema_xml = engine.connect_dataset(str(unindexed_dir))
+    assert schema_xml.source_format == "xml"
     # Verify stale view was dropped so queries don't inadvertently run against previous dataset
     assert not engine.has_active_view()
     assert engine.current_sql_source is None

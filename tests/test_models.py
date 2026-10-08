@@ -3,13 +3,9 @@ Unit tests for core models and specifications.
 """
 
 from src.core.models import (
-    DataType,
     ColumnMeta,
     DatasetSchema,
-    FilterOperator,
-    FilterRule,
-    AggregationFunc,
-    AggregationRule,
+    DataType,
     QuerySpec,
 )
 

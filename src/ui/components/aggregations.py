@@ -4,14 +4,13 @@ Enables ad-hoc multi-column grouping, distinct counts, and metric summarization.
 """
 
 from __future__ import annotations
-from typing import List, Optional
+
 import pandas as pd
 import streamlit as st
 
 from src.core.models import (
     AggregationFunc,
     AggregationRule,
-    ColumnMeta,
     DatasetSchema,
     FilterRule,
     QuerySpec,
@@ -22,9 +21,9 @@ from src.engine.duckdb_engine import DuckDBEngine
 def render_aggregations(
     schema: DatasetSchema,
     engine: DuckDBEngine,
-    filters: List[FilterRule],
-    global_search: Optional[str],
-    global_search_cols: Optional[List[str]],
+    filters: list[FilterRule],
+    global_search: str | None,
+    global_search_cols: list[str] | None,
 ):
     """Render interactive Group By, metrics and distinct analysis tab."""
     st.markdown("#### 📊 Raggruppamenti & Analisi Aggregata (Group By / Distinct)")
@@ -39,16 +38,18 @@ def render_aggregations(
     with tab_group:
         col_g1, col_g2 = st.columns([1, 1])
 
-        default_group = [all_cols[0]] if all_cols else []
-        if "agg_group_by_cols" in st.session_state:
-            valid_grp = [c for c in st.session_state["agg_group_by_cols"] if c in all_cols]
-            st.session_state["agg_group_by_cols"] = valid_grp if valid_grp else default_group
+        if "agg_group_by_cols" not in st.session_state:
+            st.session_state["agg_group_by_cols"] = [all_cols[0]] if all_cols else []
+        else:
+            # Filter cached columns against available columns
+            st.session_state["agg_group_by_cols"] = [
+                c for c in st.session_state["agg_group_by_cols"] if c in all_cols
+            ]
 
         with col_g1:
             group_cols = st.multiselect(
                 "Colonne di Raggruppamento (Group By):",
                 options=all_cols,
-                default=default_group,
                 key="agg_group_by_cols",
             )
 
@@ -94,7 +95,7 @@ def render_aggregations(
             if not group_cols:
                 st.warning("Seleziona almeno una colonna di raggruppamento.")
             else:
-                aggs: List[AggregationRule] = []
+                aggs: list[AggregationRule] = []
                 if add_count:
                     aggs.append(AggregationRule(column="*", func=AggregationFunc.COUNT, alias="conteggio"))
                 if sum_col != "(Nessuna)":
@@ -123,7 +124,7 @@ def render_aggregations(
                             # Visual chart if 1 group column and at least 1 numeric metric
                             if len(group_cols) == 1 and len(res.columns) > 1:
                                 primary_metric = res.columns[1]
-                                chart_df = df_agg.set_index(group_cols[0])[[primary_metric]].head(20)
+                                chart_df = df_agg.set_index(df_agg.columns[0])[[primary_metric]].head(20)
                                 st.bar_chart(chart_df)
                         else:
                             st.info("Nessun dato per i parametri specificati.")
@@ -148,15 +149,18 @@ def render_aggregations(
         max_dist_vals = st.slider("Numero massimo di valori da recuperare:", min_value=10, max_value=500, value=100)
 
         if st.button("🔍 Mostra Valori Distinti", key="btn_fetch_distinct"):
-            with st.spinner("Ricerca valori distinti..."):
-                spec = QuerySpec(
-                    filters=filters,
-                    global_search=global_search,
-                    global_search_columns=global_search_cols,
-                    group_by_columns=[sel_dist_col],
-                    aggregations=[AggregationRule(column="*", func=AggregationFunc.COUNT, alias="frequenza")],
-                    limit=max_dist_vals,
-                )
+            if not sel_dist_col or not all_cols:
+                st.warning("Nessuna colonna disponibile per l'analisi distinta.")
+            else:
+                with st.spinner("Ricerca valori distinti..."):
+                    spec = QuerySpec(
+                        filters=filters,
+                        global_search=global_search,
+                        global_search_columns=global_search_cols,
+                        group_by_columns=[sel_dist_col],
+                        aggregations=[AggregationRule(column="*", func=AggregationFunc.COUNT, alias="frequenza")],
+                        limit=max_dist_vals,
+                    )
                 try:
                     res = engine.execute_query(spec)
                     if res.rows:

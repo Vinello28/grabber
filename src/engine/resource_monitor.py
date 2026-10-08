@@ -4,16 +4,18 @@ Tracks RAM, CPU, threads, and determines safe memory limits for out-of-core exec
 """
 
 from __future__ import annotations
+
 import os
+from typing import Any
+
 import psutil
-from typing import Dict, Any
 
 
 class ResourceMonitor:
     """Monitors system hardware and process resource consumption."""
 
     @staticmethod
-    def get_system_stats() -> Dict[str, Any]:
+    def get_system_stats() -> dict[str, Any]:
         """Fetch real-time hardware metrics."""
         vm = psutil.virtual_memory()
         cpu_count = os.cpu_count() or 1
@@ -34,10 +36,7 @@ class ResourceMonitor:
 
     @staticmethod
     def calculate_safe_memory_limit(reserve_ratio: float = 0.6) -> str:
-        """
-        Calculate a safe DuckDB memory limit string (e.g. '4GB' or '8GB').
-        Guarantees that low RAM machines (<16GB) don't trigger Out-Of-Memory kernel kills.
-        """
+        """Calculate a safe DuckDB memory limit string (e.g. '4GB' or '8GB')."""
         vm = psutil.virtual_memory()
         available_gb = vm.available / (1024 ** 3)
         total_gb = vm.total / (1024 ** 3)
