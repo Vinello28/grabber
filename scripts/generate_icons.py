@@ -2,8 +2,8 @@
 Generates high-resolution application icons for Grabber (.png, .ico, .icns).
 """
 
-import os
 from pathlib import Path
+
 from PIL import Image, ImageDraw
 
 

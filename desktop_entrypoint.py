@@ -2,6 +2,9 @@
 Desktop Standalone Entrypoint for Grabber.
 Directly bootstraps Streamlit in-process and opens the local browser.
 Designed for PyInstaller standalone executables (.exe, .app, Linux binary).
+
+Copyright (c) 2026 Gabriele Vianello <vianello.tech@gmail.com>.
+Licensed under Grabber Restrictive Non-Commercial License (RNC-1.0).
 """
 
 import sys

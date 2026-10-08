@@ -2,6 +2,9 @@
 Grabber - Analytical Query Engine GUI
 Streamlit application for out-of-core big data exploration
 with dynamic filter battery, aggregations, and streaming export.
+
+Copyright (c) 2026 Gabriele Vianello <vianello.tech@gmail.com>.
+Licensed under Grabber Restrictive Non-Commercial License (RNC-1.0).
 """
 
 import contextlib
@@ -52,6 +55,9 @@ def main():
         schema = render_dataset_selector(engine)
         render_cache_controls()
         render_update_checker()
+
+        st.divider()
+        st.caption("© 2026 **Gabriele Vianello**  \nLicenza Non Commerciale (RNC-1.0)")
 
     # Main Area
     if not schema:

@@ -158,6 +158,12 @@
 - [x] 17. GitHub Repository Username Fix & Production Preset Buttons Concealment <!-- id: 16 -->
   - [x] 17.1 Set default GitHub repository to `Vinello28/grabber` in `src/core/version.py`.
   - [x] 17.2 Hide development test presets ("Test CSV", "Test XML") when running in production or packaged standalone executables.
+- [x] 18. Copyright & Restrictive Non-Commercial License <!-- id: 17 -->
+  - [x] 18.1 Create formal `LICENSE` file with Copyright (c) 2026 Gabriele Vianello and explicit prohibitions on commercial use and commercial analytics / data processing.
+  - [x] 18.2 Update `pyproject.toml` with author metadata, contact email, and custom restrictive license declaration.
+  - [x] 18.3 Add dedicated "Copyright e Licenza" section in `README.md` explaining restrictions in Italian.
+  - [x] 18.4 Update entrypoints (`run.py`, `desktop_entrypoint.py`, `src/ui/app.py`, `src/core/version.py`) and Streamlit sidebar with copyright and license notice.
+  - [x] 18.5 Verify test suite, linters, and type checking pass without regression.
 
 ---
 
@@ -277,10 +283,25 @@
   - Linters: `uvx ruff check` passed with **0 errors**.
   - Type checking: `uvx mypy` passed with **0 issues in 42 source files**.
 
-### 13. GitHub Username Correction & Production Presets Concealment
-- Corrected default GitHub repository owner in [src/core/version.py](file:///Users/gabrielevianello/Desktop/grabber/src/core/version.py) to `Vinello28/grabber`.
-- Gated quick test preset buttons ("Test CSV", "Test XML") behind development environment check in [src/ui/components/dataset_selector.py](file:///Users/gabrielevianello/Desktop/grabber/src/ui/components/dataset_selector.py) (`is_prod = getattr(sys, "frozen", False) or os.getenv("GRABBER_ENV", "").lower() == "production"`), ensuring they are never rendered in standalone executables or production installations.
-- In production, defaulted initial dataset path input to empty string `""` rather than development folder path `"data/test1"`.
+### 14. Copyright & Restrictive Non-Commercial License (RNC-1.0)
+- **Legal License Specification**:
+  - Authored and added [LICENSE](LICENSE) containing the *Grabber Restrictive Non-Commercial License (RNC-1.0)* with Copyright © 2026 Gabriele Vianello (<vianello.tech@gmail.com>).
+  - Explicit non-commercial grant: software permitted only for personal, academic, educational, and non-profit research use.
+  - Strict direct commercial use prohibition: forbids selling, renting, SaaS deployment, or proprietary bundling.
+  - Express anti-commercial analytics clause: prohibits querying, processing, filtering, aggregating, or analyzing any datasets for commercial benefit, business intelligence, paid client deliverables, corporate auditing, or commercial market research.
+  - Derivative protection: derivative works must maintain identical copyright, author attribution, and restrictive licensing without relicensing under permissive open-source licenses.
+  - Designated contact for commercial inquiries: `vianello.tech@gmail.com`.
+- **Project Packaging & Metadata**:
+  - Updated [pyproject.toml](pyproject.toml): set `authors = [{ name = "Gabriele Vianello", email = "vianello.tech@gmail.com" }]`, declared custom license `Grabber Restrictive Non-Commercial License (RNC-1.0)`, and added `License :: Other/Proprietary License` classification.
+  - Extended [src/core/version.py](src/core/version.py) with `__author__`, `__copyright__`, and `__license__`.
+- **Documentation & UI Notices**:
+  - Added dedicated `## 📜 Copyright e Licenza` section in [README.md](README.md) clearly explaining the restrictions in Italian.
+  - Integrated persistent copyright and license notice into Streamlit sidebar in [src/ui/app.py](src/ui/app.py).
+  - Added copyright headers and banners across [run.py](run.py) and [desktop_entrypoint.py](desktop_entrypoint.py).
+- **Quality Assurance**:
+  - Test suite: **50/50 active tests passed** (1 skipped as expected for large XML cache).
+  - Linter: `uvx ruff check .` passed with **0 errors**.
+  - Type checking: `uvx mypy` passed with **0 issues in 42 source files**.
 
 
 

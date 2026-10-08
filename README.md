@@ -179,3 +179,22 @@ grabber/
 ├── requirements.txt           # Dipendenze Python
 └── pyproject.toml             # Configurazione packaging standard
 ```
+
+---
+
+## 📜 Copyright e Licenza
+
+Copyright © 2026 **Gabriele Vianello** (<vianello.tech@gmail.com>). Tutti i diritti riservati.
+
+Questo software è distribuito sotto licenza proprietaria restrittiva **Grabber Restrictive Non-Commercial License (RNC-1.0)**. Consultare il file [LICENSE](LICENSE) per il testo contrattuale completo.
+
+### Termini e Restrizioni:
+- **Uso Personale e Accademico**: L'esecuzione, la consultazione del codice e la compilazione sono permesse esclusivamente per fini personali, didattici, universitari e di ricerca no-profit.
+- **Divieto di Utilizzo Commerciale**: È vietata la vendita, la sub-licenza, la distribuzione a pagamento o l'erogazione dell'applicazione sotto forma di servizio cloud o SaaS.
+- **Divieto di Analisi Dati a Fini Commerciali (*Anti-Commercial Analytics*)**:
+  - È espressamente vietato utilizzare Grabber, i suoi moduli di ingestione streaming o il motore di calcolo analitico per interrogare, processare, estrarre o aggregare dataset a supporto di attività commerciali, business intelligence aziendale, consulenze a pagamento, conformità aziendale a fini di lucro o per conto di società ed enti commerciali.
+- **Opere Derivate**: Qualsiasi modifica o copia deve mantenere l'attribuzione di copyright originale e la medesima licenza restrittiva, senza possibilità di rilascio sotto licenze open-source permissive (es. MIT, Apache, BSD).
+
+### Licenze Commerciali ed Enterprise:
+Per l'impiego all'interno di organizzazioni a scopo di lucro, l'elaborazione di dati a fini commerciali o accordi di licenza dedicati:  
+✉️ **Gabriele Vianello** — [vianello.tech@gmail.com](mailto:vianello.tech@gmail.com)

@@ -3,6 +3,7 @@ Automated Build Script for Grabber Desktop Executable.
 Generates icons if missing, executes PyInstaller, and packages output.
 """
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -46,10 +47,8 @@ def sync_version_from_git_or_env(root_dir: Path):
 
 def main():
     if hasattr(sys.stdout, "reconfigure"):
-        try:
+        with contextlib.suppress(Exception):
             sys.stdout.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
 
     root_dir = Path(__file__).resolve().parent
     print("=" * 60)

@@ -3,8 +3,12 @@
 Grabber Application Launcher.
 Cross-platform launcher for macOS, Windows, and Linux.
 Automatically starts the Streamlit GUI in the local browser.
+
+Copyright (c) 2026 Gabriele Vianello <vianello.tech@gmail.com>.
+Licensed under Grabber Restrictive Non-Commercial License (RNC-1.0).
 """
 
+import contextlib
 import multiprocessing
 import subprocess
 import sys
@@ -13,17 +17,16 @@ from pathlib import Path
 
 def main():
     if hasattr(sys.stdout, "reconfigure"):
-        try:
+        with contextlib.suppress(Exception):
             sys.stdout.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
 
     root_dir = Path(__file__).resolve().parent
     app_path = root_dir / "src" / "ui" / "app.py"
 
     print("=" * 60)
     print("GRABBER - Big Data Analytical Engine")
-    print("Cross-Platform Out-of-Core Data Query & Export GUI")
+    print("Copyright (c) 2026 Gabriele Vianello")
+    print("Grabber Restrictive Non-Commercial License (RNC-1.0)")
     print("=" * 60)
     print(f"Directory di lavoro: {root_dir}")
     print(f"Applicazione: {app_path}")
