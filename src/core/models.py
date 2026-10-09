@@ -18,6 +18,11 @@ class DataType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class BooleanOperator(str, Enum):
+    AND = "AND"
+    OR = "OR"
+
+
 class FilterOperator(str, Enum):
     # Text operators
     CONTAINS = "contains"
@@ -102,6 +107,7 @@ class FilterRule:
     value: Any = None
     value_to: Any = None  # Used for BETWEEN
     case_sensitive: bool = False
+    term_logic: BooleanOperator = BooleanOperator.AND
 
 
 @dataclass
@@ -121,8 +127,10 @@ class AggregationRule:
 @dataclass
 class QuerySpec:
     filters: list[FilterRule] = field(default_factory=list)
+    filter_logic: BooleanOperator = BooleanOperator.AND
     global_search: str | None = None
     global_search_columns: list[str] | None = None
+    global_search_logic: BooleanOperator = BooleanOperator.AND
     selected_columns: list[str] | None = None
     group_by_columns: list[str] | None = None
     aggregations: list[AggregationRule] | None = None

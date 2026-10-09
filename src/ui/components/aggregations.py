@@ -11,6 +11,7 @@ import streamlit as st
 from src.core.models import (
     AggregationFunc,
     AggregationRule,
+    BooleanOperator,
     DatasetSchema,
     FilterRule,
     QuerySpec,
@@ -24,6 +25,8 @@ def render_aggregations(
     filters: list[FilterRule],
     global_search: str | None,
     global_search_cols: list[str] | None,
+    filter_logic: BooleanOperator = BooleanOperator.AND,
+    global_search_logic: BooleanOperator = BooleanOperator.AND,
 ):
     """Render interactive Group By, metrics and distinct analysis tab."""
     st.markdown("#### 📊 Raggruppamenti & Analisi Aggregata (Group By / Distinct)")
@@ -105,8 +108,10 @@ def render_aggregations(
 
                 spec = QuerySpec(
                     filters=filters,
+                    filter_logic=filter_logic,
                     global_search=global_search,
                     global_search_columns=global_search_cols,
+                    global_search_logic=global_search_logic,
                     group_by_columns=group_cols,
                     aggregations=aggs,
                     limit=int(limit_rows),
@@ -155,8 +160,10 @@ def render_aggregations(
                 with st.spinner("Ricerca valori distinti..."):
                     spec = QuerySpec(
                         filters=filters,
+                        filter_logic=filter_logic,
                         global_search=global_search,
                         global_search_columns=global_search_cols,
+                        global_search_logic=global_search_logic,
                         group_by_columns=[sel_dist_col],
                         aggregations=[AggregationRule(column="*", func=AggregationFunc.COUNT, alias="frequenza")],
                         limit=max_dist_vals,

@@ -11,6 +11,7 @@ import re
 
 from src.core.models import (
     AggregationFunc,
+    BooleanOperator,
     ColumnMeta,
     DataType,
     FilterOperator,
@@ -33,6 +34,33 @@ class QueryBuilder:
         """Escape a string literal for SQL."""
         return str(val).replace("'", "''")
 
+    @staticmethod
+    def parse_search_tokens(text: str) -> list[str]:
+        """
+        Extract search tokens from raw input text.
+        If the text contains commas, splits by comma (allowing multi-word phrases as single tokens).
+        Otherwise, splits by whitespace.
+        Strips straight quotes ("" and '') and smart/curly quotes (“”‘’«»`) and whitespace from each token.
+        """
+        if not text:
+            return []
+        raw = str(text).strip()
+        if not raw:
+            return []
+
+        quote_chars = '"\'“”‘’«»`'
+        stripped_raw = raw.strip(quote_chars).strip()
+        if not stripped_raw:
+            return []
+
+        parts = stripped_raw.split(",") if "," in stripped_raw else stripped_raw.split()
+        tokens: list[str] = []
+        for p in parts:
+            token = p.strip().strip(quote_chars).strip()
+            if token:
+                tokens.append(token)
+        return tokens
+
     @classmethod
     def build_where_clause(
         cls,
@@ -40,12 +68,12 @@ class QueryBuilder:
         schema_columns: list[ColumnMeta] | None = None,
     ) -> str:
         """Compile filters and global search into a single WHERE clause."""
-        predicates: list[str] = []
+        global_search_pred: str | None = None
 
         # 1. Global Search
         if spec.global_search and spec.global_search.strip():
-            raw_term = spec.global_search.strip().strip('"\'“”‘’«»`').strip()
-            if raw_term:
+            tokens = cls.parse_search_tokens(spec.global_search)
+            if tokens:
                 search_cols = spec.global_search_columns
                 if not search_cols and schema_columns:
                     # Default to all text/categorical columns
@@ -55,27 +83,33 @@ class QueryBuilder:
                     ]
 
                 if search_cols:
-                    words = [w for w in raw_term.split() if w]
-                    if len(words) > 1:
+                    term_logic_op = (
+                        spec.global_search_logic.value
+                        if isinstance(spec.global_search_logic, BooleanOperator)
+                        else str(spec.global_search_logic)
+                    )
+                    join_op = f" {term_logic_op} "
+                    if len(tokens) > 1:
                         col_predicates = []
                         for c in search_cols:
                             c_sql = cls.quote_ident(c)
                             c_words = [
-                                f"LOWER(CAST({c_sql} AS VARCHAR)) LIKE '%{cls.escape_str_literal(w.lower())}%'"
-                                for w in words
+                                f"LOWER(CAST({c_sql} AS VARCHAR)) LIKE '%{cls.escape_str_literal(t.lower())}%'"
+                                for t in tokens
                             ]
-                            col_predicates.append(f"({' AND '.join(c_words)})")
-                        predicates.append(f"({' OR '.join(col_predicates)})")
+                            col_predicates.append(f"({join_op.join(c_words)})")
+                        global_search_pred = f"({' OR '.join(col_predicates)})"
                     else:
-                        term = cls.escape_str_literal(raw_term.lower())
+                        term = cls.escape_str_literal(tokens[0].lower())
                         col_predicates = [
                             f"LOWER(CAST({cls.quote_ident(c)} AS VARCHAR)) LIKE '%{term}%'"
                             for c in search_cols
                         ]
-                        predicates.append(f"({' OR '.join(col_predicates)})")
+                        global_search_pred = f"({' OR '.join(col_predicates)})"
 
         # 2. Dynamic Column Filters
         col_type_map = {c.name: c for c in schema_columns} if schema_columns else {}
+        filter_preds: list[str] = []
 
         for f in spec.filters:
             col_sql = cls.quote_ident(f.column)
@@ -84,12 +118,32 @@ class QueryBuilder:
 
             pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
             if pred:
-                predicates.append(pred)
+                filter_preds.append(pred)
 
-        if not predicates:
+        filter_logic_op = (
+            spec.filter_logic.value
+            if isinstance(spec.filter_logic, BooleanOperator)
+            else str(spec.filter_logic)
+        )
+
+        filters_combined: str | None = None
+        if filter_preds:
+            if len(filter_preds) == 1:
+                filters_combined = filter_preds[0]
+            else:
+                if filter_logic_op == "OR":
+                    filters_combined = f"({' OR '.join(filter_preds)})"
+                else:
+                    filters_combined = " AND ".join(filter_preds)
+
+        if global_search_pred and filters_combined:
+            return f"WHERE {global_search_pred} AND {filters_combined}"
+        elif global_search_pred:
+            return f"WHERE {global_search_pred}"
+        elif filters_combined:
+            return f"WHERE {filters_combined}"
+        else:
             return ""
-
-        return "WHERE " + " AND ".join(predicates)
 
     @classmethod
     def _build_filter_predicate(
@@ -119,16 +173,42 @@ class QueryBuilder:
         # Text matching
         if op == FilterOperator.CONTAINS:
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
-            words = [w for w in clean_val.split() if w]
-            if len(words) > 1 and not f.case_sensitive:
-                word_preds = [f"{base} LIKE '%{cls.escape_str_literal(w.lower())}%'" for w in words]
-                return f"({' AND '.join(word_preds)})"
-            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
+            tokens = cls.parse_search_tokens(clean_val)
+            if not tokens:
+                return None
+            term_op = (
+                f.term_logic.value
+                if isinstance(f.term_logic, BooleanOperator)
+                else str(f.term_logic)
+            )
+            join_op = f" {term_op} "
+            if len(tokens) > 1 and not f.case_sensitive:
+                word_preds = [f"{base} LIKE '%{cls.escape_str_literal(t.lower())}%'" for t in tokens]
+                return f"({join_op.join(word_preds)})"
+            elif len(tokens) > 1 and f.case_sensitive:
+                word_preds = [f"{base} LIKE '%{cls.escape_str_literal(t)}%'" for t in tokens]
+                return f"({join_op.join(word_preds)})"
+            esc = cls.escape_str_literal(tokens[0] if f.case_sensitive else tokens[0].lower())
             return f"{base} LIKE '%{esc}%'"
 
         if op == FilterOperator.NOT_CONTAINS:
-            esc = cls.escape_str_literal(clean_val.lower() if not f.case_sensitive else clean_val)
             base = f"CAST({col_sql} AS VARCHAR)" if f.case_sensitive else f"LOWER(CAST({col_sql} AS VARCHAR))"
+            tokens = cls.parse_search_tokens(clean_val)
+            if not tokens:
+                return None
+            term_op = (
+                f.term_logic.value
+                if isinstance(f.term_logic, BooleanOperator)
+                else str(f.term_logic)
+            )
+            join_op = f" {term_op} "
+            if len(tokens) > 1:
+                preds = [
+                    f"{base} NOT LIKE '%{cls.escape_str_literal(t if f.case_sensitive else t.lower())}%'"
+                    for t in tokens
+                ]
+                return f"({col_sql} IS NULL OR ({join_op.join(preds)}))"
+            esc = cls.escape_str_literal(tokens[0] if f.case_sensitive else tokens[0].lower())
             return f"({col_sql} IS NULL OR {base} NOT LIKE '%{esc}%')"
 
         if op == FilterOperator.STARTS_WITH:

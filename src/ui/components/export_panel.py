@@ -10,7 +10,12 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.core.models import DatasetSchema, FilterRule, QuerySpec
+from src.core.models import (
+    BooleanOperator,
+    DatasetSchema,
+    FilterRule,
+    QuerySpec,
+)
 from src.engine.duckdb_engine import DuckDBEngine
 
 
@@ -20,6 +25,8 @@ def render_export_panel(
     filters: list[FilterRule],
     global_search: str | None,
     global_search_cols: list[str] | None,
+    filter_logic: BooleanOperator = BooleanOperator.AND,
+    global_search_logic: BooleanOperator = BooleanOperator.AND,
 ):
     """Render export modal/section for filtered dataset."""
     st.markdown("#### 💾 Esportazione Dati Filtrati")
@@ -28,8 +35,10 @@ def render_export_panel(
     # Calculate count of matching rows
     spec = QuerySpec(
         filters=filters,
+        filter_logic=filter_logic,
         global_search=global_search,
         global_search_columns=global_search_cols,
+        global_search_logic=global_search_logic,
     )
 
     with st.spinner("Calcolo righe corrispondenti per l'esportazione..."):

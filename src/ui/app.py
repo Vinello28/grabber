@@ -96,7 +96,7 @@ def main():
     st.divider()
 
     # Dynamic Filter Battery & Global Search
-    filters, global_search, search_cols = render_filter_battery(schema, engine)
+    filters, global_search, search_cols, filter_logic, global_search_logic = render_filter_battery(schema, engine)
 
     st.divider()
 
@@ -109,13 +109,13 @@ def main():
     ])
 
     with tab_viewer:
-        render_data_viewer(schema, engine, filters, global_search, search_cols)
+        render_data_viewer(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
 
     with tab_aggs:
-        render_aggregations(schema, engine, filters, global_search, search_cols)
+        render_aggregations(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
 
     with tab_export:
-        render_export_panel(schema, engine, filters, global_search, search_cols)
+        render_export_panel(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
 
     with tab_schema:
         _render_schema_tab(schema)

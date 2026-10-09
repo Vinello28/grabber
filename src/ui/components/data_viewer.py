@@ -8,7 +8,12 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.core.models import DatasetSchema, FilterRule, QuerySpec
+from src.core.models import (
+    BooleanOperator,
+    DatasetSchema,
+    FilterRule,
+    QuerySpec,
+)
 from src.engine.duckdb_engine import DuckDBEngine
 
 
@@ -18,6 +23,8 @@ def render_data_viewer(
     filters: list[FilterRule],
     global_search: str | None,
     global_search_cols: list[str] | None,
+    filter_logic: BooleanOperator = BooleanOperator.AND,
+    global_search_logic: BooleanOperator = BooleanOperator.AND,
 ):
     """Render interactive data preview table with pagination and sorting."""
     st.markdown("#### 📋 Anteprima Dati")
@@ -94,8 +101,10 @@ def render_data_viewer(
     # Build query specification
     spec = QuerySpec(
         filters=filters,
+        filter_logic=filter_logic,
         global_search=global_search,
         global_search_columns=global_search_cols,
+        global_search_logic=global_search_logic,
         selected_columns=selected_cols,
         order_by=order_by,
         limit=page_size,

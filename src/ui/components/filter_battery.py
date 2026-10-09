@@ -11,6 +11,7 @@ from typing import Any
 import streamlit as st
 
 from src.core.models import (
+    BooleanOperator,
     ColumnMeta,
     DatasetSchema,
     DataType,
@@ -35,13 +36,13 @@ def get_type_icon(dtype: DataType) -> str:
 def render_filter_battery(
     schema: DatasetSchema,
     engine: DuckDBEngine,
-) -> tuple[list[FilterRule], str | None, list[str] | None]:
+) -> tuple[list[FilterRule], str | None, list[str] | None, BooleanOperator, BooleanOperator]:
     """
     Render global search bar and dynamic typed filter battery.
-    Returns: (list_of_filter_rules, global_search_term, global_search_columns)
+    Returns: (list_of_filter_rules, global_search_term, global_search_columns, filter_logic, global_search_logic)
     """
     if not schema or not schema.columns:
-        return [], None, None
+        return [], None, None, BooleanOperator.AND, BooleanOperator.AND
 
     if "filter_entries" not in st.session_state:
         st.session_state["filter_entries"] = []
@@ -54,10 +55,23 @@ def render_filter_battery(
         global_search = st.text_input(
             "Cerca parola chiave o codice (es. Codice Fiscale, Denominazione...):",
             value=st.session_state.get("global_search_val", ""),
-            placeholder="Digita per cercare...",
+            placeholder="Digita termini separati da virgola (es. Roma, Milano)...",
             key="input_global_search",
         )
         st.session_state["global_search_val"] = global_search
+
+        saved_gs_logic = st.session_state.get("global_search_logic_val", BooleanOperator.AND.value)
+        gs_idx = 0 if saved_gs_logic != BooleanOperator.OR.value else 1
+        selected_gs_logic = st.radio(
+            "Corrispondenza termini ricerca rapida:",
+            options=[BooleanOperator.AND.value, BooleanOperator.OR.value],
+            format_func=lambda x: "Tutti i termini (AND)" if x == BooleanOperator.AND.value else "Almeno un termine (OR)",
+            horizontal=True,
+            index=gs_idx,
+            key="radio_global_search_logic",
+        )
+        st.session_state["global_search_logic_val"] = selected_gs_logic
+        global_search_logic = BooleanOperator(selected_gs_logic)
 
     text_columns = [
         c.name for c in schema.columns
@@ -84,7 +98,7 @@ def render_filter_battery(
     # 2. Dynamic Column Filters
     st.markdown("#### ⚙️ Batteria Filtri Dinamici")
 
-    col_btn_add, col_btn_clear, _ = st.columns([1.5, 1.5, 5])
+    col_btn_add, col_btn_clear, col_comb = st.columns([1.5, 1.5, 5])
     with col_btn_add:
         if st.button("➕ Aggiungi Filtro", use_container_width=True):
             import uuid
@@ -97,6 +111,7 @@ def render_filter_battery(
                 "operator": default_op,
                 "value": "",
                 "value_to": "",
+                "term_logic": BooleanOperator.AND.value,
             })
             st.rerun()
 
@@ -106,6 +121,23 @@ def render_filter_battery(
             st.session_state["global_search_val"] = ""
             st.session_state["input_global_search"] = ""
             st.rerun()
+
+    with col_comb:
+        if len(st.session_state["filter_entries"]) >= 2:
+            saved_comb = st.session_state.get("filter_comb_logic_val", BooleanOperator.AND.value)
+            comb_idx = 0 if saved_comb != BooleanOperator.OR.value else 1
+            selected_comb = st.radio(
+                "Combina i filtri con:",
+                options=[BooleanOperator.AND.value, BooleanOperator.OR.value],
+                format_func=lambda x: "Tutti i filtri (AND)" if x == BooleanOperator.AND.value else "Almeno un filtro (OR)",
+                horizontal=True,
+                index=comb_idx,
+                key="radio_filter_comb_logic",
+            )
+            st.session_state["filter_comb_logic_val"] = selected_comb
+            filter_logic = BooleanOperator(selected_comb)
+        else:
+            filter_logic = BooleanOperator(st.session_state.get("filter_comb_logic_val", BooleanOperator.AND.value))
 
     filter_rules: list[FilterRule] = []
     entries_to_delete: list[str] = []
@@ -193,12 +225,19 @@ def render_filter_battery(
 
             # Build FilterRule object if valid
             if _is_filter_valid(sel_op, val, val_to):
+                term_logic_val = entry.get("term_logic", BooleanOperator.AND.value)
+                term_logic_enum = (
+                    BooleanOperator(term_logic_val)
+                    if sel_op in (FilterOperator.CONTAINS, FilterOperator.NOT_CONTAINS)
+                    else BooleanOperator.AND
+                )
                 filter_rules.append(
                     FilterRule(
                         column=selected_col_name,
                         operator=sel_op,
                         value=val,
                         value_to=val_to,
+                        term_logic=term_logic_enum,
                     )
                 )
 
@@ -208,16 +247,19 @@ def render_filter_battery(
             st.session_state["filter_entries"] = [
                 e for e in st.session_state["filter_entries"] if e.get("id") != del_id
             ]
-            for prefix in ("col_sel_", "op_sel_", "val_single_", "val_min_", "val_max_", "val_multi_", "del_btn_"):
+            for prefix in ("col_sel_", "op_sel_", "val_single_", "val_min_", "val_max_", "val_multi_", "term_logic_", "del_btn_"):
                 k = f"{prefix}{del_id}"
                 if k in st.session_state:
                     del st.session_state[k]
         st.rerun()
+
     # Reset pagination to page 1 when criteria change
     search_sig = (
         str(global_search.strip() if global_search else ""),
+        global_search_logic.value,
         tuple(sorted(search_cols or [])),
-        tuple((r.column, r.operator.value, str(r.value), str(r.value_to)) for r in filter_rules),
+        filter_logic.value,
+        tuple((r.column, r.operator.value, str(r.value), str(r.value_to), r.term_logic.value) for r in filter_rules),
     )
     if st.session_state.get("_prev_filter_signature") != search_sig:
         st.session_state["_prev_filter_signature"] = search_sig
@@ -225,7 +267,7 @@ def render_filter_battery(
         if "page_num_input" in st.session_state:
             st.session_state["page_num_input"] = 1
 
-    return filter_rules, global_search.strip() or None, search_cols or None
+    return filter_rules, global_search.strip() or None, search_cols or None, filter_logic, global_search_logic
 
 
 def _get_allowed_operators(dtype: DataType) -> list[FilterOperator]:
@@ -337,13 +379,30 @@ def _render_value_inputs(
         )
         return selected, None
 
-    # Standard single value input
+    # Standard single or multi-value input
+    is_contains_op = op in (FilterOperator.CONTAINS, FilterOperator.NOT_CONTAINS)
+    label = "Valore (separa con virgola per più termini)" if is_contains_op else "Valore"
+    placeholder = "es. termine1, termine2..." if is_contains_op else "Inserisci valore..."
     val = st.text_input(
-        "Valore",
+        label,
         value=str(entry.get("value", "")),
         key=f"val_single_{entry_id}",
-        placeholder="Inserisci valore...",
+        placeholder=placeholder,
     )
+
+    if is_contains_op:
+        saved_t_logic = entry.get("term_logic", BooleanOperator.AND.value)
+        t_idx = 0 if saved_t_logic != BooleanOperator.OR.value else 1
+        chosen_t_logic = st.radio(
+            "Corrispondenza termini:",
+            options=[BooleanOperator.AND.value, BooleanOperator.OR.value],
+            format_func=lambda x: "Tutti (AND)" if x == BooleanOperator.AND.value else "Almeno uno (OR)",
+            horizontal=True,
+            index=t_idx,
+            key=f"term_logic_{entry_id}",
+        )
+        entry["term_logic"] = chosen_t_logic
+
     if op == FilterOperator.REGEX and val:
         import re
         try:

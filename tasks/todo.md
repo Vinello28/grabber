@@ -451,3 +451,55 @@
 - **Verifica reale** (app Streamlit vera, client WebSocket che si comporta come il frontend, nessuna interazione): il server emette un solo `auto_rerun` (interval 5.0) e il pannello si aggiorna ogni 5,0 s con valori diversi. CPU del server a riposo, finestra 35 s con una sessione: **0,68% -> 1,14% di un core** (+~0,5%; una sola misura per caso, rumore incluso). Lettura metriche: 0,015 ms.
 - **Non verificato**: rendering visivo in un browser/finestra pywebview (nessun browser disponibile); comportamento durante indicizzazione/export lunghi (atteso: pannello fermo finché lo script non finisce, limite dichiarato).
 
+## 23. Ricerca multi-termine (separati da virgola) e logica booleana AND / OR
+
+**Contesto e Obiettivo**:
+Attualmente la ricerca supporta un singolo termine o parole separate da spazio forzate in AND, e i filtri della batteria sono sempre combinati in AND.
+L'obiettivo è consentire:
+1. Ricerca di più termini per volta separati da virgola (o spazio), sia nella ricerca globale sia nei filtri di colonna (es. `CONTAINS`).
+2. Scelta della logica booleana (AND / OR):
+   - A livello di termini di ricerca: trovare record con *tutti* i termini (AND) oppure con *almeno uno* dei termini (OR).
+   - A livello di batteria di filtri: combinare le regole di filtro in *tutti soddisfatti* (AND) oppure *almeno uno soddisfatto* (OR).
+
+**Design**:
+- `src/core/models.py`:
+  - Introduzione di `BooleanOperator(str, Enum)` con valori `AND` e `OR`.
+  - Estensione di `FilterRule` con `term_logic: BooleanOperator = BooleanOperator.AND`.
+  - Estensione di `QuerySpec` con `filter_logic: BooleanOperator = BooleanOperator.AND` e `global_search_logic: BooleanOperator = BooleanOperator.AND`.
+- `src/engine/query_builder.py`:
+  - Tokenizer dedicato `parse_search_tokens(text: str) -> list[str]` con supporto virgola, rimozione smart/straight quote e spazi.
+  - Compilazione SQL per multi-termine in `_build_filter_predicate` per `CONTAINS` e `NOT_CONTAINS` con operatore configurabile (AND / OR).
+  - Compilazione SQL per multi-termine in `global_search` con operatore configurabile (AND / OR).
+  - Compilazione clausola WHERE con operatore configurabile tra filtri (`filter_logic`: AND / OR).
+- `src/ui/components/filter_battery.py`:
+  - UI Ricerca Rapida: selettore inline per logica termini (Tutti: AND / Almeno uno: OR) e placeholder aggiornato con esempio virgola.
+  - UI Batteria Filtri: selettore globale per combinare i filtri (Tutti i filtri: AND / Almeno un filtro: OR) visibile quando ci sono >= 2 filtri.
+  - Nei filtri `CONTAINS` / `NOT_CONTAINS`: selettore logica termini (AND / OR) per i valori inseriti.
+  - Inclusione della logica booleana nella firma di paginazione per reset automatico a pagina 1.
+- `src/ui/app.py`, `data_viewer.py`, `aggregations.py`, `export_panel.py`:
+  - Propagazione dei parametri booleani a `QuerySpec`.
+- `tests/`:
+  - Suite di test esaustiva per tokenizer, compilazione SQL DuckDB e test di esecuzione in-memory DuckDB.
+
+**Passi**:
+- [x] 1. Test unitari e di regressione (TDD - rossi): tokenizer, compilazione QueryBuilder con AND/OR, esecuzione in-memory DuckDB
+- [x] 2. `src/core/models.py`: aggiunta di `BooleanOperator`, campi in `FilterRule` e `QuerySpec`
+- [x] 3. `src/engine/query_builder.py`: implementazione `parse_search_tokens`, logica multi-termine e combinatore WHERE AND/OR
+- [x] 4. `src/ui/components/filter_battery.py`: controlli UI per selezione AND/OR e supporto virgola
+- [x] 5. Aggiornamento `src/ui/app.py` e componenti a valle (`data_viewer.py`, `aggregations.py`, `export_panel.py`)
+- [x] 6. Esecuzione suite completa (`uv run --with pytest pytest`) e verifica di regressione
+- [x] 7. Documentazione risultati in `tasks/todo.md` e aggiornamento `tasks/lessons.md` se emergono correzioni
+
+### Review Section — Ricerca multi-termine e filtri AND/OR
+- **Modifiche implementate**:
+  - `src/core/models.py`: aggiunto `BooleanOperator(str, Enum)` con `AND` e `OR`. Aggiunto `term_logic: BooleanOperator` in `FilterRule`, e `filter_logic`, `global_search_logic` in `QuerySpec` (con default retrocompatibili a `AND`).
+  - `src/engine/query_builder.py`: introdotto `parse_search_tokens` con supporto a separazione per virgola o spazi, stripping quote dritte e smart quote. Aggiornata la compilazione SQL per `CONTAINS` e `NOT_CONTAINS` con logica termini AND/OR. Aggiornata la compilazione della ricerca rapida globale con termini multipli AND/OR. Aggiornata la clausola WHERE per combinare la batteria di filtri in AND o in OR (con corretta parentesizzazione e coesistenza con ricerca globale).
+  - `src/ui/components/filter_battery.py`: aggiunti selettori radio orizzontali per corrispondenza termini nella ricerca rapida (Tutti / Almeno uno) e placeholder con virgola. Aggiunto selettore di combinazione filtri della batteria (Tutti i filtri / Almeno un filtro) quando sono attivi $\ge 2$ filtri. Aggiunto selettore per corrispondenza termini nei filtri di testo (`CONTAINS`, `NOT_CONTAINS`). Aggiornata la firma `search_sig` per il reset reattivo della paginazione a pagina 1 ad ogni cambio di operatore logico.
+  - `src/ui/app.py`, `data_viewer.py`, `aggregations.py`, `export_panel.py`: propagazione trasparente e type-safe dei parametri booleani alle rispettive istanze di `QuerySpec`.
+- **Test e Qualità**:
+  - Creati 13 nuovi test in `tests/test_multi_term_boolean_filters.py` che coprono il parsing dei token, la compilazione SQL e l'esecuzione reale in-memory di query con DuckDB.
+  - Suite completa: **84 passed, 1 skipped, 1 deselected, 0 failed** (i test esclusi richiedono dataset locali non tracciati in git).
+  - Linter: `ruff check` superato con 0 errori (`All checks passed!`).
+
+
+
