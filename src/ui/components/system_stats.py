@@ -7,13 +7,21 @@ import streamlit as st
 
 from src.engine.resource_monitor import ResourceMonitor
 
+SYSTEM_STATS_REFRESH_SECONDS = 5
 
+
+@st.fragment(run_every=SYSTEM_STATS_REFRESH_SECONDS)
 def render_system_stats():
-    """Render hardware resource monitor in the sidebar."""
+    """Render hardware resource monitor, refreshing itself every few seconds.
+
+    Being a fragment, only this panel reruns on the timer (not the whole script). It must be
+    called inside the container where it should appear (``with st.sidebar:``): a fragment
+    replaces its own content on rerun, but would append to an externally-created container.
+    """
     stats = ResourceMonitor.get_system_stats()
 
-    st.sidebar.markdown("### 🖥️ Risorse di Sistema")
-    c1, c2 = st.sidebar.columns(2)
+    st.markdown("### 🖥️ Risorse di Sistema")
+    c1, c2 = st.columns(2)
     with c1:
         st.metric("RAM Processo", f"{stats['process_rss_mb']} MB")
         st.metric("Core CPU", f"{stats['cpu_cores']}")
@@ -21,5 +29,5 @@ def render_system_stats():
         st.metric("RAM Libera", f"{stats['available_ram_gb']} GB")
         st.metric("CPU Utilizzo", f"{stats['cpu_percent']}%")
 
-    st.sidebar.caption(f"Limite memoria motore: **{ResourceMonitor.calculate_safe_memory_limit()}**")
-    st.sidebar.divider()
+    st.caption(f"Limite memoria motore: **{ResourceMonitor.calculate_safe_memory_limit()}**")
+    st.divider()

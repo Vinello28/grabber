@@ -422,3 +422,32 @@
 - [x] `tests/test_github_pages.py`: 6 passed.
 - Non modificato: i mock del terminale (`run.sh`/`run.bat` da sorgente aprono ancora il browser, quindi corretti).
 - Nota: il deploy parte solo con push su `main` che tocca `docs/**`.
+
+## 22. Aggiornamento automatico delle risorse di sistema ogni 5 s
+
+**Contesto**: `render_system_stats()` legge RAM/CPU solo quando lo script Streamlit rerun-a (azione utente), quindi il pannello "Risorse di Sistema" resta fermo se l'utente non fa nulla.
+
+**Misura del costo** (`.venv`, macOS, 2000 iterazioni di `get_system_stats()` + `calculate_safe_memory_limit()`): 0,015 ms CPU per lettura => duty cycle 0,0003% a 5 s. Costo della lettura trascurabile => la feature si fa.
+
+**Design** (Streamlit 1.65 installato; `st.fragment(run_every=...)` esiste da 1.37):
+- Decorare il rendering con `@st.fragment(run_every=5)`: ogni 5 s rerun-a SOLO il frammento (non l'intero script, quindi nessun re-render di filtri/tabelle/tab, nessuna query DuckDB).
+- Nessun thread/websocket custom, nessuna nuova dipendenza.
+- Il rerun del frammento si ferma da solo quando la sessione/scheda viene chiusa.
+- `CPU Utilizzo`: `psutil.cpu_percent(interval=None)` misura dall'ultima chiamata; con tick regolari a 5 s diventa una media su 5 s (più significativa di prima, dove la finestra era "tempo tra due click").
+- `requirements.txt`: `streamlit>=1.35.0` -> `>=1.37.0` (minimo per `run_every`).
+
+**Limite noto (da dichiarare, non risolvibile senza thread custom)**: il frammento gira nel thread dello script della sessione, quindi durante un'operazione lunga e bloccante (indicizzazione XML, export) l'aggiornamento si accoda e riparte a fine operazione.
+
+**Passi**
+- [x] 1. Test (rossi): `render_system_stats` è un frammento con `run_every == 5` (es. `streamlit.testing.v1.AppTest` o ispezione del wrapper) + il render continua a mostrare le 4 metriche
+- [x] 2. `src/ui/components/system_stats.py`: `@st.fragment(run_every=SYSTEM_STATS_REFRESH_SECONDS)`, costante a 5
+- [x] 3. `requirements.txt` (`streamlit>=1.37.0`)
+- [x] 4. Suite completa + ruff
+- [x] 5. Verifica reale: avviare l'app, osservare che i valori cambiano senza interazione; misurare CPU del processo a riposo con la feature attiva (confronto prima/dopo)
+
+### Review Section — Risorse live ogni 5 s
+- **Fix**: [system_stats.py](src/ui/components/system_stats.py) ora è `@st.fragment(run_every=SYSTEM_STATS_REFRESH_SECONDS)` (5 s). Rerun-a solo il pannello, non lo script. Usa `st.*` (non `st.sidebar.*`): `app.py` lo chiama già dentro `with st.sidebar:` e il frammento sostituisce il proprio contenuto invece di accodarlo a un container esterno. `streamlit>=1.37.0` in `requirements.txt` e `pyproject.toml`.
+- **Test**: 3 nuovi (`tests/test_system_stats_refresh.py`: intervallo 5 s, wrapper `st.fragment(run_every=5)`, 4 metriche renderizzate). Suite: **83 passed, 1 skipped**; `ruff` ok.
+- **Verifica reale** (app Streamlit vera, client WebSocket che si comporta come il frontend, nessuna interazione): il server emette un solo `auto_rerun` (interval 5.0) e il pannello si aggiorna ogni 5,0 s con valori diversi. CPU del server a riposo, finestra 35 s con una sessione: **0,68% -> 1,14% di un core** (+~0,5%; una sola misura per caso, rumore incluso). Lettura metriche: 0,015 ms.
+- **Non verificato**: rendering visivo in un browser/finestra pywebview (nessun browser disponibile); comportamento durante indicizzazione/export lunghi (atteso: pannello fermo finché lo script non finisce, limite dichiarato).
+

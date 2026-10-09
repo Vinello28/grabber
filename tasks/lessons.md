@@ -146,3 +146,7 @@
 ## HTTPS in frozen builds
 - Mai affidarsi ai CA path di default di OpenSSL in un'app PyInstaller: puntano alla macchina di build. Usare sempre un contesto `ssl` con `certifi.where()` per ogni richiesta di rete.
 - Non inghiottire gli errori di rete silenziosamente: "nessuna release" e "errore TLS" sono casi diversi per l'utente.
+
+## Streamlit fragments con `run_every`
+- Il timer di `st.fragment(run_every=N)` gira nel frontend (il server manda un `auto_rerun` con intervallo e `fragment_id`): un client WebSocket grezzo non vede aggiornamenti se non emula quel messaggio.
+- **Rule**: dentro un frammento scrivere con `st.*` nel container in cui viene chiamato (`with st.sidebar:`), non con `st.sidebar.*`: il rerun sostituisce il contenuto del frammento ma accoda gli elementi scritti su container esterni.
