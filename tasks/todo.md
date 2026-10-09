@@ -324,3 +324,49 @@
 - [x] 5. Verifica Documentazione & Lessons Learned <!-- id: 14.5 -->
   - Aggiornato [tasks/lessons.md](tasks/lessons.md) con le regole anti-regressione per localhost, loopback IP numerico e browser health check.
 
+### 16. GitHub Pages Showcase & Documentation Website <!-- id: 15 -->
+- [x] 1. Architettura & Design Specifica della GitHub Page <!-- id: 15.1 -->
+  - Definire palette professionale: Bianco, Nero profondo, Scala di Grigi (Slate/Zinc), Accenti Giallo/Oro (`#F59E0B`) e Verde Smeraldo (`#10B981`).
+  - Progettare switch Dark/Light Mode dinamico con persistenza `localStorage` e sync con preferenza di sistema (`prefers-color-scheme`).
+  - Struttura cartella `docs/`: `index.html`, `styles.css`, `script.js`, `assets/` (copia ottimizzata di icone e grafiche).
+  - Lingua della documentazione e landing page: Inglese professionale.
+  - Setup workflow GitHub Actions opzionale `.github/workflows/deploy-pages.yml` per deploy automatico continuo.
+- [x] 2. Implementazione Frontend (`docs/index.html`, `styles.css`, `script.js`) <!-- id: 15.2 -->
+  - Navbar reattiva con brand icon, navigation links, GitHub badge/stars, e switch tema Sole/Luna.
+  - Hero Section ad alto impatto: tagline, badges cross-platform, metriche core, CTA downloads e quickstart, mockup/interfaccia grafica simulata.
+  - Metrics Ribbon: 24M record in 2.8s, ~28MB RAM flatline su 62GB XML, 100% Locale, Cross-platform standalone.
+  - Features Grid con micro-animazioni e accenti cromatici giallo/verde (DuckDB Out-of-Core, Ingestione XML Streaming, Schema Auto-Detection, Ricerca Multi-token, Aggregazioni, Streaming Exporter).
+  - Benchmark Interattivo & Calcolatore Memoria: confronto visivo tra approccio in-memory tradizionale (crash/OOM) vs Grabber (memoria costante).
+  - Schema Architetturale Interattivo a 3 livelli: UI Layer, Core Engine, Adapters & Ingestion.
+  - Centro Download Desktop: card per Windows (.zip/.exe), macOS (.zip/.app), Linux (.tar.gz) con riferimento al sistema di auto-update integrato.
+  - Quickstart Guida Developer con schede codice (One-click, Pip/Venv, Batch) e pulsanti "Copia negli appunti" con feedback visivo.
+  - Sezione Licenza RNC-1.0 & Contatti Commerciali: spiegazione chiara uso personale/accademico vs commerciale.
+  - Footer completo con attribuzione copyright © 2026 Gabriele Vianello e link utili.
+- [x] 3. Asset & Ottimizzazione Performance <!-- id: 15.3 -->
+  - Copiate e ottimizzate le icone in `docs/assets/` (`icon.png`, `favicon.ico`).
+  - Inclusi favicon e manifest/meta tag Open Graph / Twitter Card per condivisione social professionale.
+- [x] 4. Verifica, Test di Responsive Design & Cross-Browser <!-- id: 15.4 -->
+  - Testati tema chiaro e scuro, variabili CSS custom, transizioni, persistenza locale.
+  - Verificate risposte statiche HTTP via web server di test locale (200 OK su tutti gli endpoint).
+  - Test suite automatizzata in [tests/test_github_pages.py](tests/test_github_pages.py) (6 test superati).
+  - Test suite complessiva: **65 passati, 1 skipped**.
+  - Linters: `uvx ruff check .` e `uvx mypy` passati con **0 errori**.
+- [x] 5. Guida Configurazione GitHub Pages per l'Utente & Documentazione <!-- id: 15.5 -->
+  - Creata GitHub Actions CI/CD in [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml).
+  - Aggiornato [README.md](README.md) con badge e link ufficiale al sito live.
+  - Documentate le istruzioni chiare e dirette per l'utente.
+
+### Review Section — GitHub Pages Realization
+- **Deliverables**:
+  - `docs/index.html`: Landing page moderna in lingua inglese con copywriting tecnico e orientato alle prestazioni.
+  - `docs/styles.css`: Sistema di design personalizzato con variabili CSS native per tema Dark e Light, palette Bianco/Nero/Grigio/Giallo/Verde e supporto responsive.
+  - `docs/script.js`: Gestore del tema (con salvataggio `localStorage` e sync con tema di sistema OS), tab di comandi terminale, pulsanti "Copy to clipboard" con tooltip visivo, e simulatore interattivo di benchmark e consumo RAM.
+  - `docs/assets/`: Icona ad alta risoluzione e favicon.
+  - `.github/workflows/deploy-pages.yml`: Workflow di deploy automatico su push nel branch `main`.
+  - `tests/test_github_pages.py`: Test automatici di conformità HTML, collegamenti ad ancora, variabili CSS e binding JavaScript.
+- **Quality Assurance**:
+  - Test suite: **65/65 test attivi superati**.
+  - Linter Ruff: **0 errori**.
+  - Type checking MyPy: **0 problemi su 44 file sorgente**.
+
+

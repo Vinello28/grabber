@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grabber — Big Data Analytical Engine & GUI</title>
+  
+  <!-- Meta & SEO -->
+  <meta name="description" content="High-performance vectorized analytical engine and reactive GUI for querying, filtering, and exporting 70GB+ datasets on standard workstations with zero out-of-memory errors.">
+  <meta name="keywords" content="DuckDB, Big Data, Out-of-Core, Streamlit, Parquet, CSV, XML streaming, Data Analytics, Python, Standalone Executable">
+  <meta name="author" content="Gabriele Vianello">
+
+  <!-- Open Graph / Social Media -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://vinello28.github.io/grabber/">
+  <meta property="og:title" content="Grabber — Big Data Analytical Engine & GUI">
+  <meta property="og:description" content="Analyze 70GB+ Datasets on standard workstations with flat memory and vectorized columnar speed.">
+  <meta property="og:image" content="assets/icon.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="bg-mesh" aria-hidden="true"></div>
+
+  <!-- Header / Navigation -->
+  <header class="site-header">
+    <div class="container nav-container">
+      <a href="#" class="brand" aria-label="Grabber Home">
+        <img src="assets/icon.png" alt="Grabber Logo" class="brand-icon">
+        <span>Grabber</span>
+        <span class="brand-badge">v1.0.0</span>
+      </a>
+
+      <!-- Desktop Nav Links -->
+      <nav>
+        <ul class="nav-links" id="nav-links">
+          <li><a href="#features" class="nav-link">Features</a></li>
+          <li><a href="#benchmarks" class="nav-link">Benchmarks</a></li>
+          <li><a href="#architecture" class="nav-link">Architecture</a></li>
+          <li><a href="#downloads" class="nav-link">Downloads</a></li>
+          <li><a href="#quickstart" class="nav-link">Quickstart</a></li>
+          <li><a href="#license" class="nav-link">License</a></li>
+        </ul>
+      </nav>
+
+      <!-- Actions: Theme Toggle & GitHub -->
+      <div class="nav-actions">
+        <!-- Theme Toggle Button -->
+        <button id="theme-toggle-btn" class="theme-toggle-btn" aria-label="Switch theme" title="Toggle theme">
+          <!-- Sun Icon (shown in dark mode) -->
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <!-- Moon Icon (shown in light mode) -->
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- GitHub Repository Button -->
+        <a href="https://github.com/Vinello28/grabber" target="_blank" rel="noopener noreferrer" class="github-btn" aria-label="GitHub Repository">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"></path>
+          </svg>
+          <span>GitHub</span>
+        </a>
+
+        <!-- Mobile Menu Toggle Button -->
+        <button id="nav-toggle-btn" class="nav-toggle-btn" aria-label="Toggle navigation menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="container">
+      <!-- Pill Badge -->
+      <div class="hero-pill">
+        <span class="pulse-dot"></span>
+        <span>Out-of-Core Columnar Vectorization • Zero Memory Crashes</span>
+      </div>
+
+      <!-- Main Heading -->
+      <h1 class="hero-title">
+        Query <span class="gradient-text-gold">70GB+ Datasets</span> on Your Laptop.<br>
+        <span class="gradient-text-green">Zero Out-of-Memory.</span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="hero-subtitle">
+        High-performance vectorized analytical engine powered by <strong>DuckDB</strong> with an adaptive, schema-agnostic <strong>Streamlit GUI</strong>. Query and filter tens of millions of records in seconds while maintaining a flat, controlled memory footprint.
+      </p>
+
+      <!-- CTA Buttons -->
+      <div class="hero-cta-group">
+        <a href="#downloads" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Download Desktop App
+        </a>
+        <a href="#quickstart" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          Quickstart Guide
+        </a>
+        <a href="#benchmarks" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          View Benchmarks
+        </a>
+      </div>
+
+      <!-- Hero Terminal / Interactive Snippet Showcase -->
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <div class="terminal-tabs">
+            <button class="terminal-tab active" data-target="tab-bash">macOS / Linux</button>
+            <button class="terminal-tab" data-target="tab-windows">Windows</button>
+            <button class="terminal-tab" data-target="tab-python">Python CLI</button>
+            <button class="terminal-tab" data-target="tab-sql">Engine Query</button>
+          </div>
+          <button class="copy-btn" id="btn-copy-terminal" title="Copy code snippet">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy</span>
+          </button>
+        </div>
+
+        <div class="terminal-body">
+          <!-- Panel: macOS / Linux -->
+          <div class="terminal-panel active" id="tab-bash">
+            <div class="code-line"><span class="code-prompt">$</span> <span>git clone https://github.com/Vinello28/grabber.git &amp;&amp; cd grabber</span></div>
+            <div class="code-line"><span class="code-prompt">$</span> <span>./run.sh</span></div>
+            <div class="code-line code-output"><span>[INFO] Initializing Grabber Big Data Analytical Engine...</span></div>
+            <div class="code-line code-output"><span>[INFO] Discovered DuckDB Vectorized Core with Out-of-Core Spillover.</span></div>
+            <div class="code-line code-output"><span class="code-success">[READY] Web GUI launched at http://127.0.0.1:8501</span></div>
+          </div>
+
+          <!-- Panel: Windows -->
+          <div class="terminal-panel" id="tab-windows">
+            <div class="code-line"><span class="code-prompt">C:\&gt;</span> <span>git clone https://github.com/Vinello28/grabber.git</span></div>
+            <div class="code-line"><span class="code-prompt">C:\&gt;</span> <span>cd grabber &amp;&amp; run.bat</span></div>
+            <div class="code-line code-output"><span>[INFO] Allocating dynamic localhost socket (127.0.0.1)...</span></div>
+            <div class="code-line code-output"><span class="code-success">[READY] Opening Grabber in default web browser...</span></div>
+          </div>
+
+          <!-- Panel: Python CLI -->
+          <div class="terminal-panel" id="tab-python">
+            <div class="code-line"><span class="code-prompt">$</span> <span>python3 -m venv .venv &amp;&amp; source .venv/bin/activate</span></div>
+            <div class="code-line"><span class="code-prompt">$</span> <span>pip install -r requirements.txt</span></div>
+            <div class="code-line"><span class="code-prompt">$</span> <span>python run.py</span></div>
+            <div class="code-line code-output"><span class="code-highlight">[STATUS] Scanning data directories (CSV, Parquet, XML)...</span></div>
+          </div>
+
+          <!-- Panel: SQL Engine Query -->
+          <div class="terminal-panel" id="tab-sql">
+            <div class="code-line"><span class="code-highlight">-- Instant vectorized query over 24 million records</span></div>
+            <div class="code-line"><span>SELECT REGIONE, COUNT(*) AS TOT, SUM(IMPORTO) AS TOT_EROGATO</span></div>
+            <div class="code-line"><span>FROM read_parquet('data/**/*.parquet', union_by_name=true)</span></div>
+            <div class="code-line"><span>WHERE CODICE_FISCALE ILIKE '%VRN%' GROUP BY REGIONE;</span></div>
+            <div class="code-line code-output"><span class="code-success">Query executed in 2.81s | Peak Memory: 148 MB | 0 OOM</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Metrics Ribbon -->
+  <section class="metrics-section">
+    <div class="container">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value gradient-text-gold">23.9M+</div>
+          <div class="metric-label">Records in 2.81s</div>
+          <div class="metric-desc">Instant columnar scan &amp; multi-field filtering on a 13.5GB dataset.</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-value gradient-text-green">~28 MB</div>
+          <div class="metric-label">Constant RAM Profile</div>
+          <div class="metric-desc">Iterative streaming XML parser ($O(1)$ memory consumption).</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-value">100%</div>
+          <div class="metric-label">Local &amp; Sovereign</div>
+          <div class="metric-desc">Zero telemetry, zero cloud fees, zero data leaving your workstation.</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-value">3 OS</div>
+          <div class="metric-label">Standalone Desktop Apps</div>
+          <div class="metric-desc">Native .exe, .app, and Linux binaries with built-in auto-updater.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid Section -->
+  <section id="features" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">High Performance Architecture</span>
+        <h2 class="section-title">Engineered for Massive Datasets</h2>
+        <p class="section-subtitle">
+          Built from the ground up to solve memory exhaustion bottlenecks when analyzing massive enterprise files on ordinary workstations.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <!-- Feature 1 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-yellow">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h3 class="feature-title">DuckDB Out-of-Core Execution</h3>
+          <p class="feature-desc">
+            Leverages vectorized columnar execution and automatic disk spillover buffer. Never suffers from Out-of-Memory crashes even when datasets exceed physical RAM.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Disk Spillover</span>
+            <span class="feature-pill">Columnar Pushdown</span>
+            <span class="feature-pill">RAM Capping</span>
+          </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-green">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 16 12 12 8 16"></polyline>
+              <line x1="12" y1="12" x2="12" y2="21"></line>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+              <polyline points="16 16 12 12 8 16"></polyline>
+            </svg>
+          </div>
+          <h3 class="feature-title">Streaming XML &amp; Parallel Parquet</h3>
+          <p class="feature-desc">
+            High-speed chunked streaming XML parser using <code>iterparse</code> with immediate element clearance. Converts 60GB+ XML trees into indexed Parquet using all available CPU cores.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">O(1) Memory</span>
+            <span class="feature-pill">Multi-Process Indexing</span>
+            <span class="feature-pill">Union By Name</span>
+          </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-yellow">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title">Dynamic Schema Auto-Detection</h3>
+          <p class="feature-desc">
+            Automatically scans incoming tabular files, classifying columns into Text, Numeric, Categorical, and Date types. Dynamically populates specialized filter controls.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Format Sniffing</span>
+            <span class="feature-pill">Auto Type Coercion</span>
+            <span class="feature-pill">Regex &amp; Range Filters</span>
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-green">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+          </div>
+          <h3 class="feature-title">Multi-Column Aggregations &amp; Pivot</h3>
+          <p class="feature-desc">
+            Perform complex Group By operations across arbitrary dimensions with instantaneous SQL execution. Calculate sums, counts, averages, and generate instant visualizations.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Dynamic Metrics</span>
+            <span class="feature-pill">Instant Charts</span>
+            <span class="feature-pill">Distinct Extraction</span>
+          </div>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-yellow">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <h3 class="feature-title">Global Multi-Token Instant Search</h3>
+          <p class="feature-desc">
+            Search across every text column simultaneously with sanitization for quotes and multi-word tokenized conjuncts. Seamless pagination offset recovery ensures no false empty results.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Multi-Word AND</span>
+            <span class="feature-pill">Typo Tolerant</span>
+            <span class="feature-pill">Auto Offset Reset</span>
+          </div>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-green">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title">Streaming Exporter (CSV, Parquet, JSON)</h3>
+          <p class="feature-desc">
+            Push filtered results directly to compressed Parquet or CSV on disk via analytical stream pipelines without staging intermediate rows in RAM.
+          </p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Zero Overhead</span>
+            <span class="feature-pill">Direct Download</span>
+            <span class="feature-pill">Custom Delimiters</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Benchmark & RAM Safety Simulator -->
+  <section id="benchmarks" class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Tested &amp; Verified</span>
+        <h2 class="section-title">Benchmarks &amp; Memory Safety Simulator</h2>
+        <p class="section-subtitle">
+          See how Grabber preserves hardware stability compared to traditional in-memory libraries when processing increasing data volumes.
+        </p>
+      </div>
+
+      <!-- Interactive Simulator Box -->
+      <div class="simulator-box">
+        <div class="simulator-controls">
+          <span class="simulator-label">Select Dataset Benchmark Scenario:</span>
+          <div class="dataset-size-selector">
+            <button class="size-pill-btn" data-size="5GB">5 GB Single CSV</button>
+            <button class="size-pill-btn active" data-size="15GB">13.5 GB (24M CSV Rows)</button>
+            <button class="size-pill-btn" data-size="40GB">40 GB Parquet Glob</button>
+            <button class="size-pill-btn" data-size="70GB">62 GB Streaming XML</button>
+          </div>
+        </div>
+
+        <div class="simulator-comparison">
+          <!-- Grabber Card -->
+          <div class="engine-comparison-card card-grabber">
+            <span class="engine-badge badge-grabber">Grabber (DuckDB Out-of-Core)</span>
+            <h3 class="sim-title gradient-text-green">Rock-Solid Flat Memory</h3>
+            <div class="sim-status" style="color: var(--accent-green);">Status: Executing smoothly with disk buffer</div>
+
+            <div class="bar-container">
+              <div class="bar-header">
+                <span>Peak Memory RSS</span>
+                <strong id="sim-grabber-ram">148 MB</strong>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-grabber" id="sim-grabber-bar" style="width: 12%;"></div>
+              </div>
+            </div>
+
+            <ul class="sim-specs">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Execution Time: <strong id="sim-grabber-time" style="color: var(--text-primary); margin-left: 4px;">2.81 s</strong>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Spill-to-Disk Buffer Active
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                OS Responsiveness: 100% (No Thrashing)
+              </li>
+            </ul>
+          </div>
+
+          <!-- Traditional Engine Card -->
+          <div class="engine-comparison-card card-traditional">
+            <span class="engine-badge badge-traditional">Traditional In-Memory (e.g. Pandas)</span>
+            <h3 class="sim-title" style="color: #ef4444;">Memory Blowup / Crash</h3>
+            <div class="sim-status" id="sim-trad-status" style="color: #ef4444;">OS Thrashing / Virtual Memory Spike</div>
+
+            <div class="bar-container">
+              <div class="bar-header">
+                <span>Estimated Memory Required</span>
+                <strong id="sim-trad-ram">52.6 GB</strong>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-traditional" id="sim-trad-bar" style="width: 85%;"></div>
+              </div>
+            </div>
+
+            <ul class="sim-specs">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                Heap Exhaustion on Standard Laptops (8GB-16GB RAM)
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                System Freezes &amp; OOM Killer Triggered
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                Requires expensive Cloud Clusters
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verified Benchmark Results Table -->
+      <div class="benchmark-table-wrapper">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Dataset / Benchmark</th>
+              <th>Format</th>
+              <th>Total Size</th>
+              <th>Row Count</th>
+              <th>Operation Executed</th>
+              <th>Execution Time</th>
+              <th>Peak RAM RSS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="highlight-row">
+              <td><strong>Test 1 (Scan &amp; Count)</strong></td>
+              <td>12 CSV Files</td>
+              <td><strong>13.5 GB</strong></td>
+              <td>23,957,368</td>
+              <td>Full Columnar Scan &amp; Count</td>
+              <td><strong>2.81 s</strong></td>
+              <td>&lt; 150 MB</td>
+            </tr>
+            <tr>
+              <td><strong>Test 1 (Filter &amp; Export)</strong></td>
+              <td>12 CSV Files</td>
+              <td><strong>13.5 GB</strong></td>
+              <td>23,957,368</td>
+              <td>Filter Codice Fiscale + Disk Export</td>
+              <td><strong>2.92 s</strong></td>
+              <td>&lt; 180 MB</td>
+            </tr>
+            <tr>
+              <td><strong>Test 1 (Group By)</strong></td>
+              <td>12 CSV Files</td>
+              <td><strong>13.5 GB</strong></td>
+              <td>23,957,368</td>
+              <td>Group By Region + Sum Metrics</td>
+              <td><strong>3.03 s</strong></td>
+              <td>&lt; 220 MB</td>
+            </tr>
+            <tr class="highlight-row">
+              <td><strong>Annihilation Stress Test</strong></td>
+              <td>Complex XML</td>
+              <td><strong>1.3 GB (single)</strong></td>
+              <td>500,000</td>
+              <td>Streaming Iterative Parse (288 MB/s)</td>
+              <td><strong>4.49 s</strong></td>
+              <td><strong>28.1 MB (Flat)</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture Section -->
+  <section id="architecture" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Clean Architecture</span>
+        <h2 class="section-title">Decoupled Three-Tier Design</h2>
+        <p class="section-subtitle">
+          Built following strict separation of concerns, ensuring maximum maintainability, testability, and portability across operating systems.
+        </p>
+      </div>
+
+      <div class="architecture-diagram">
+        <!-- Tier 1: UI Layer -->
+        <div class="arch-layer layer-ui">
+          <div class="arch-header">
+            <h3 class="arch-title">1. UI &amp; Presentation Layer</h3>
+            <span class="arch-tech">Streamlit Reactive Browser GUI</span>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 0.92rem;">
+            Dynamic, dataset-agnostic GUI with responsive filter batteries, interactive data grids, aggregation pivot controls, live system telemetry widgets, and native desktop file pickers.
+          </p>
+          <div class="arch-grid">
+            <div class="arch-item">⚡ <code>dataset_selector.py</code></div>
+            <div class="arch-item">⚡ <code>filter_battery.py</code></div>
+            <div class="arch-item">⚡ <code>data_viewer.py</code></div>
+            <div class="arch-item">⚡ <code>system_stats.py</code></div>
+          </div>
+        </div>
+
+        <div class="arch-arrow">▼</div>
+
+        <!-- Tier 2: Analytical Core Engine -->
+        <div class="arch-layer layer-engine">
+          <div class="arch-header">
+            <h3 class="arch-title">2. Analytical Query Engine</h3>
+            <span class="arch-tech">DuckDB Vectorized Execution</span>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 0.92rem;">
+            Vectorized columnar query compilation, SQL AST builder with parameter sanitization, intelligent multi-core execution, automatic RAM caps, and disk spillover buffer.
+          </p>
+          <div class="arch-grid">
+            <div class="arch-item">🛡️ <code>duckdb_engine.py</code></div>
+            <div class="arch-item">🛡️ <code>query_builder.py</code></div>
+            <div class="arch-item">🛡️ <code>resource_monitor.py</code></div>
+            <div class="arch-item">🛡️ <code>models.py</code></div>
+          </div>
+        </div>
+
+        <div class="arch-arrow">▼</div>
+
+        <!-- Tier 3: Ingestion & Adapters -->
+        <div class="arch-layer layer-adapters">
+          <div class="arch-header">
+            <h3 class="arch-title">3. Ingestion &amp; Adapters Layer</h3>
+            <span class="arch-tech">Streaming Out-of-Core I/O</span>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 0.92rem;">
+            Zero-overhead Parquet pushdown scanner, robust multi-file CSV sniffer with dialect recovery, and hierarchical XML streaming with parallel Parquet chunking.
+          </p>
+          <div class="arch-grid">
+            <div class="arch-item">📦 <code>csv_adapter.py</code></div>
+            <div class="arch-item">📦 <code>parquet_adapter.py</code></div>
+            <div class="arch-item">📦 <code>xml_adapter.py</code></div>
+            <div class="arch-item">📦 <code>detector.py</code></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Downloads Section -->
+  <section id="downloads" class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Zero-Install Distribution</span>
+        <h2 class="section-title">Standalone Desktop Executables</h2>
+        <p class="section-subtitle">
+          Don't want to mess with Python or terminals? Download pre-packaged native executables ready to run on any computer with a simple double click.
+        </p>
+      </div>
+
+      <div class="downloads-grid">
+        <!-- Windows -->
+        <div class="download-card">
+          <div>
+            <div class="os-icon-wrapper">
+              <svg width="34" height="34" viewBox="0 0 88 88" fill="currentColor">
+                <path d="M0 12.402l35.687-4.86.016 34.423-35.67.247L0 12.402zm35.67 33.529l.028 34.453L.028 75.48.016 46.178l35.654-.247zM40.999 5.867L87.882 0v41.527l-46.883.364V5.867zm46.892 40.231v41.902l-46.892-6.551-.013-35.011 46.905-.34z"/>
+              </svg>
+            </div>
+            <h3 class="download-os-title">Windows 10 / 11</h3>
+            <div class="download-os-subtitle">Grabber-Windows.zip (64-bit)</div>
+            <ul class="download-specs">
+              <li>• Standalone <code>Grabber.exe</code> with custom icon</li>
+              <li>• Zero runtime dependencies or Python needed</li>
+              <li>• Built-in loopback IP resolver (bypasses sandbox)</li>
+            </ul>
+          </div>
+          <a href="https://github.com/Vinello28/grabber/releases/latest" class="btn btn-green">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download for Windows
+          </a>
+        </div>
+
+        <!-- macOS -->
+        <div class="download-card">
+          <div>
+            <div class="os-icon-wrapper">
+              <svg width="34" height="34" viewBox="0 0 170 170" fill="currentColor">
+                <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.08-7.73-7.97-12.13-14.68-7.94-12.08-14.19-25.99-18.74-41.74-4.56-15.75-6.84-30.73-6.84-44.95 0-17.51 4.54-32.06 13.62-43.64 9.08-11.58 20.35-17.48 33.82-17.7 5.09 0 10.74 1.35 16.94 4.04 6.2 2.7 10.02 4.09 11.47 4.17 1.22 0 5.25-1.48 12.09-4.44 6.84-2.96 12.82-4.22 17.94-3.79 19.34 1.57 33.4 9.4 42.17 23.51-17.3 10.45-25.75 24.62-25.35 42.52.4 14.14 5.76 25.86 16.08 35.16 4.7 4.25 9.94 7.42 15.72 9.53-3.23 9.48-7.39 18.78-12.49 27.91zM119.22 33.28c0-7.72 2.77-15.02 8.32-21.89 5.54-6.86 12.35-11.02 20.43-12.48.24 1.2.36 2.45.36 3.75 0 7.64-2.87 15.02-8.62 22.13-5.74 7.12-12.59 11.23-20.54 12.34-.12-1.3-.18-2.61-.18-3.85z"/>
+              </svg>
+            </div>
+            <h3 class="download-os-title">macOS</h3>
+            <div class="download-os-subtitle">Grabber-macOS.zip (Apple Silicon &amp; Intel)</div>
+            <ul class="download-specs">
+              <li>• Standalone <code>Grabber.app</code> with Retina .icns</li>
+              <li>• Drag &amp; drop directly to Applications folder</li>
+              <li>• Automatic background daemon with health check</li>
+            </ul>
+          </div>
+          <a href="https://github.com/Vinello28/grabber/releases/latest" class="btn btn-green">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download for macOS
+          </a>
+        </div>
+
+        <!-- Linux -->
+        <div class="download-card">
+          <div>
+            <div class="os-icon-wrapper">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </div>
+            <h3 class="download-os-title">Linux</h3>
+            <div class="download-os-subtitle">Grabber-Linux.tar.gz (x86_64)</div>
+            <ul class="download-specs">
+              <li>• Portable standalone binary for Ubuntu, Debian, Fedora</li>
+              <li>• Pre-compiled DuckDB and C++ vector extensions</li>
+              <li>• Native file picker support via Zenity / Tkinter</li>
+            </ul>
+          </div>
+          <a href="https://github.com/Vinello28/grabber/releases/latest" class="btn btn-green">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download for Linux
+          </a>
+        </div>
+      </div>
+
+      <!-- In-App Auto-Update Banner -->
+      <div class="auto-update-box">
+        <div class="update-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </div>
+        <div class="update-content">
+          <h4>Continuous In-App Updates via GitHub Releases</h4>
+          <p>
+            Grabber includes an automated update checker directly in the sidebar. Click <em>"Check Updates"</em> at any time to compare against the latest release, inspect the changelog, and download the new binary with a streaming progress bar.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart Section -->
+  <section id="quickstart" class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Developer Installation</span>
+        <h2 class="section-title">Run from Source in 60 Seconds</h2>
+        <p class="section-subtitle">
+          Clone the repository and run immediately with Python 3.10, 3.11, or 3.12.
+        </p>
+      </div>
+
+      <div style="max-width: 820px; margin: 0 auto;">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <span style="font-size: 0.82rem; font-family: var(--font-mono); color: var(--text-secondary);">bash / zsh</span>
+            <button class="copy-btn" id="btn-copy-quickstart" data-copy-target="#quickstart-code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <div class="terminal-body">
+            <pre id="quickstart-code"><code># 1. Clone the repository
+git clone https://github.com/Vinello28/grabber.git
+cd grabber
+
+# 2. Run one-click startup script (handles virtualenv &amp; dependencies automatically)
+./run.sh          # macOS &amp; Linux
+run.bat           # Windows Command Prompt
+
+# Or manual execution:
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python run.py</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- License & Enterprise Contact Section -->
+  <section id="license" class="section">
+    <div class="container">
+      <div class="license-card">
+        <div class="license-header">
+          <span class="license-badge">License Specification</span>
+          <h3 style="font-size: 1.5rem; font-weight: 800;">Grabber Restrictive Non-Commercial License (RNC-1.0)</h3>
+        </div>
+
+        <p style="color: var(--text-secondary); line-height: 1.6;">
+          Copyright &copy; 2026 <strong>Gabriele Vianello</strong> (<a href="mailto:vianello.tech@gmail.com" style="color: var(--accent-yellow); text-decoration: underline;">vianello.tech@gmail.com</a>). All rights reserved. Grabber is distributed under a proprietary non-commercial license with explicit protections against unauthorized corporate exploitation.
+        </p>
+
+        <div class="license-columns">
+          <div class="license-col col-allowed">
+            <h4 style="color: var(--accent-green);">✓ Permitted Free Use</h4>
+            <ul>
+              <li>✓ Personal, home, and hobbyist data inspection</li>
+              <li>✓ Academic, university, and educational coursework</li>
+              <li>✓ Non-profit scientific and public interest research</li>
+              <li>✓ Source code study, auditing, and private compilation</li>
+            </ul>
+          </div>
+
+          <div class="license-col col-restricted">
+            <h4 style="color: var(--accent-red);">✕ Expressly Prohibited (Without Commercial License)</h4>
+            <ul>
+              <li>✕ For-profit corporate data processing and commercial analytics</li>
+              <li>✕ Paid client consulting deliverables and business intelligence</li>
+              <li>✕ SaaS, cloud hosting, or proprietary bundle redistribution</li>
+              <li>✕ Relicensing derivative works under permissive open-source licenses</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Enterprise Callout -->
+        <div class="enterprise-cta">
+          <div>
+            <h4 style="font-size: 1.1rem; margin-bottom: 0.25rem;">Need a Commercial or Enterprise License?</h4>
+            <p style="font-size: 0.88rem; color: var(--text-secondary);">
+              For company deployments, commercial dataset analytics, or dedicated SLA contracts, contact the author directly.
+            </p>
+          </div>
+          <a href="mailto:vianello.tech@gmail.com?subject=Grabber%20Commercial%20License%20Inquiry" class="btn btn-primary btn-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+            Contact Gabriele Vianello
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="brand">
+            <img src="assets/icon.png" alt="Grabber Logo" class="brand-icon" style="width: 32px; height: 32px;">
+            <span>Grabber</span>
+          </div>
+          <p>
+            Out-of-core vectorized analytical engine and reactive graphical interface for big data exploration on local workstations.
+          </p>
+        </div>
+
+        <div class="footer-column">
+          <h5>Product</h5>
+          <ul>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#benchmarks">Benchmarks</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#downloads">Desktop Downloads</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Resources</h5>
+          <ul>
+            <li><a href="https://github.com/Vinello28/grabber" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
+            <li><a href="https://github.com/Vinello28/grabber/releases" target="_blank" rel="noopener noreferrer">Releases &amp; Changelogs</a></li>
+            <li><a href="https://github.com/Vinello28/grabber/issues" target="_blank" rel="noopener noreferrer">Issue Tracker</a></li>
+            <li><a href="https://duckdb.org/" target="_blank" rel="noopener noreferrer">DuckDB Engine</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Legal</h5>
+          <ul>
+            <li><a href="#license">License (RNC-1.0)</a></li>
+            <li><a href="https://github.com/Vinello28/grabber/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">View License File</a></li>
+            <li><a href="mailto:vianello.tech@gmail.com">Commercial Inquiries</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>
+          Copyright &copy; 2026 <strong>Gabriele Vianello</strong>. All rights reserved.
+        </div>
+        <div style="display: flex; gap: 1.5rem;">
+          <span>Designed with modern standards • Built for Big Data</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="script.js"></script>
+</body>
+</html>

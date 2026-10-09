@@ -1,5 +1,12 @@
 # Grabber - Big Data Analytical Engine & GUI
 
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Showcase-10b981?style=flat&logo=github)](https://vinello28.github.io/grabber/)
+[![License: RNC-1.0](https://img.shields.io/badge/License-RNC--1.0-f59e0b.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#-eseguibili-standalone-doppio-clic-con-icona--github-releases)
+
+> 🌐 **Sito Ufficiale & Showcase Interattivo**: [https://vinello28.github.io/grabber/](https://vinello28.github.io/grabber/)
+
 Applicazione ad elevate prestazioni per l'interrogazione analitica, il filtraggio e l'esportazione di dataset di grandi dimensioni anche su workstation standard.
 
 Cross-platform (**macOS, Windows, Linux**), con interfaccia grafica reattiva che si auto-adatta allo schema di qualunque dato fornito.

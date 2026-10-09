@@ -122,4 +122,10 @@
   4. Always run desktop Streamlit in headless mode (`server.headless = True`) and use a background thread to poll the healthcheck endpoint `http://127.0.0.1:<port>/_stcore/health` (bypassing proxies via `ProxyHandler({})`) before calling `webbrowser.open()`.
   5. Log critical startup crashes to `get_app_cache_dir() / "startup_error.log"` so errors in windowless (`console=False`) executables can be diagnosed.
 
-
+## GitHub Pages Deployment: .nojekyll Flag & Remote Branch Synchronization
+- When setting up a static GitHub Pages site under `/docs` (or root), GitHub Pages by default triggers a Jekyll build container if not configured otherwise.
+- Jekyll attempts to load themes (e.g. `jekyll-theme-primer`), looks for SCSS stylesheets under `assets/css/style.scss`, and throws build errors if custom styles are present.
+- If GitHub Pages source is configured to `/docs` in repository settings before the commit containing `/docs` is pushed to `origin/main`, the remote builder fails with `No such file or directory @ dir_chdir0 - /github/workspace/docs`.
+- **Rule**:
+  1. Always include an empty or comment file `.nojekyll` inside the `docs/` published root to completely bypass the Jekyll processing pipeline.
+  2. Always stage, commit, and push the `/docs` directory to the remote branch on GitHub before enabling or triggering the GitHub Pages build.
