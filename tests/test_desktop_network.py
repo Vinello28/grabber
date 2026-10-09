@@ -149,3 +149,57 @@ def test_build_streamlit_cmd():
     assert "--browser.gatherUsageStats=false" in cmd
 
 
+
+
+def test_main_loads_config_options_before_starting_streamlit():
+    """Regression: flags passed to bootstrap.run() are NOT applied unless loaded first.
+
+    Without bootstrap.load_config_options(), a PyInstaller bundle runs with
+    global.developmentMode=True (Streamlit is not under site-packages), so the
+    frontend static routes are not mounted: GET / returns 404 "Not Found" while
+    /_stcore/health still answers ok. server.port / address / CORS flags are ignored too.
+    """
+    import desktop_entrypoint
+
+    calls: list[str] = []
+    flags = build_flag_options(port=8765)
+
+    with (
+        patch.object(desktop_entrypoint, "find_free_port", return_value=8765),
+        patch.object(desktop_entrypoint.threading, "Thread"),
+        patch.object(
+            desktop_entrypoint.bootstrap,
+            "load_config_options",
+            side_effect=lambda opts: calls.append(f"load:{opts == flags}"),
+        ),
+        patch.object(
+            desktop_entrypoint.bootstrap,
+            "run",
+            side_effect=lambda *a, **k: calls.append("run"),
+        ),
+    ):
+        desktop_entrypoint.main()
+
+    assert calls == ["load:True", "run"]
+
+
+def test_desktop_flags_disable_development_mode_in_streamlit_config():
+    """Loading the desktop flags must yield production mode on the chosen loopback port."""
+    import subprocess
+    import sys
+
+    code = (
+        "from streamlit import config\n"
+        "from streamlit.web import bootstrap\n"
+        "from desktop_entrypoint import build_flag_options\n"
+        "bootstrap.load_config_options(build_flag_options(port=8765))\n"
+        "print(config.get_option('global.developmentMode'),"
+        " config.get_option('server.port'),"
+        " config.get_option('server.address'),"
+        " config.get_option('server.headless'))\n"
+    )
+    root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=root, capture_output=True, text=True, check=True, timeout=60
+    )
+    assert result.stdout.strip().splitlines()[-1] == "False 8765 127.0.0.1 True"

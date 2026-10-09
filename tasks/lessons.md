@@ -129,3 +129,11 @@
 - **Rule**:
   1. Always include an empty or comment file `.nojekyll` inside the `docs/` published root to completely bypass the Jekyll processing pipeline.
   2. Always stage, commit, and push the `/docs` directory to the remote branch on GitHub before enabling or triggering the GitHub Pages build.
+
+## Streamlit In-Process Bootstrap: Flags Must Be Loaded Explicitly
+- `streamlit.web.bootstrap.run(..., flag_options=...)` does NOT apply `flag_options`. The CLI (`streamlit run`) calls `bootstrap.load_config_options(flag_options)` first. Embedding Streamlit without it silently ignores `server.port`, `server.address`, CORS/XSRF and `global.developmentMode`.
+- In a PyInstaller bundle Streamlit is not under `site-packages`, so `global.developmentMode` defaults to `True`: the frontend static routes are not mounted, so `GET /` returns 404 "Not Found" while `/_stcore/health` still answers `ok` (the health check passes and the browser opens a 404 page). This made the earlier loopback/port fixes ineffective on Windows and macOS.
+- **Rule**:
+  1. Always call `bootstrap.load_config_options(flag_options)` right before `bootstrap.run(...)` in `desktop_entrypoint.py`.
+  2. A health check is not proof the UI is served: verify a packaged build by requesting `GET /` (expect 200) and a static asset, not only `/_stcore/health`.
+  3. Never mark a packaging/startup fix done from unit tests alone: rebuild the bundle and run the real binary.

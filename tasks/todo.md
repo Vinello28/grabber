@@ -370,3 +370,21 @@
   - Type checking MyPy: **0 problemi su 44 file sorgente**.
 
 
+
+### 17. Fix: Desktop App Opens Browser on "Not Found" (404) — Windows & macOS <!-- id: 16 -->
+**Root cause (riprodotto con `dist/Grabber/Grabber`)**: `desktop_entrypoint.py` passa `flag_options` a `bootstrap.run()` ma non chiama mai `bootstrap.load_config_options(flag_options)` (la CLI `streamlit run` lo fa in `_main_run`). Conseguenze nel bundle PyInstaller:
+  - `global.developmentMode` resta al default: `True`, perché `streamlit/config.py` non si trova sotto `site-packages`.
+  - In dev mode `starlette_app.py` NON monta `create_streamlit_static_assets_routes` -> `GET /` = 404 "Not Found", mentre `/_stcore/health` risponde `ok` (quindi il polling del health check passa e apre il browser sulla pagina 404).
+  - Tutti gli altri flag (`server.port`, `server.address`, CORS/XSRF) sono ignorati: il server ascolta su `:::8501` (tutte le interfacce) invece della porta scelta da `find_free_port`, con possibile mismatch con l'URL aperto dal browser.
+- [x] 1. Diagnosi e riproduzione (curl: `/` 404, health 200; log "Local URL: http://localhost:3000")
+- [x] 2. Test di regressione (rosso): `main()` deve chiamare `bootstrap.load_config_options(flag_options)` PRIMA di `bootstrap.run`; e test d'integrazione: dopo `load_config_options(build_flag_options(...))` `global.developmentMode` e' False
+- [x] 3. Fix in `desktop_entrypoint.py`: `bootstrap.load_config_options(flag_options)` prima di `bootstrap.run`
+- [x] 4. Suite completa + ruff + mypy
+- [x] 5. Rebuild PyInstaller locale e verifica reale: `GET /` = 200 sulla porta scelta, bind solo su 127.0.0.1
+- [x] 6. Aggiornare `tasks/lessons.md` (la lesson precedente sul loopback non era effettiva: flag mai applicati)
+
+### Review Section — Desktop 404 Fix
+- **Fix**: una riga in [desktop_entrypoint.py](desktop_entrypoint.py): `bootstrap.load_config_options(flag_options)` prima di `bootstrap.run(...)`.
+- **Test**: 2 nuovi test in [tests/test_desktop_network.py](tests/test_desktop_network.py) (ordine load -> run, 1 rosso prima del fix; flag => `developmentMode=False`, porta/indirizzo corretti). Suite: **67 passed, 1 skipped**; `ruff` 0 errori; `mypy` invariato (24 errori preesistenti solo in `uvx` senza dipendenze installate).
+- **Verifica reale** (rebuild `Grabber.app`): prima `GET /` = 404, bind `:::8501`, log "Local URL: localhost:3000"; dopo `GET /` = 200, asset JS 200, health ok, bind solo `127.0.0.1:8501`.
+- **Non verificato**: Windows (stessa logica, nessuna macchina Windows disponibile qui). Va confermato con la build CI.

@@ -128,6 +128,10 @@ def main():
 
     # Start Streamlit in-process
     try:
+        # bootstrap.run() does not apply flag_options by itself: `streamlit run` loads them first.
+        # Skipping this leaves global.developmentMode=True in a frozen bundle (Streamlit is not under
+        # site-packages), which disables the frontend static routes -> "Not Found" on "/".
+        bootstrap.load_config_options(flag_options)
         bootstrap.run(
             str(app_path),
             is_hello=False,
