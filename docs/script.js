@@ -250,4 +250,22 @@
     });
   });
 
+  // ==========================================================================
+  // Latest release version badge (static HTML value is only a fallback)
+  // ==========================================================================
+  const versionBadge = document.getElementById('app-version');
+  if (versionBadge && window.fetch) {
+    fetch('https://api.github.com/repos/Vinello28/grabber/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((release) => {
+        const tag = release && release.tag_name;
+        if (tag) {
+          versionBadge.textContent = /^v/i.test(tag) ? tag : 'v' + tag;
+        }
+      })
+      .catch(() => {});
+  }
+
 })();

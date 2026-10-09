@@ -165,8 +165,6 @@ def test_main_loads_config_options_before_starting_streamlit():
     flags = build_flag_options(port=8765)
 
     with (
-        patch.object(desktop_entrypoint, "find_free_port", return_value=8765),
-        patch.object(desktop_entrypoint.threading, "Thread"),
         patch.object(
             desktop_entrypoint.bootstrap,
             "load_config_options",
@@ -178,7 +176,7 @@ def test_main_loads_config_options_before_starting_streamlit():
             side_effect=lambda *a, **k: calls.append("run"),
         ),
     ):
-        desktop_entrypoint.main()
+        desktop_entrypoint.run_server(8765)
 
     assert calls == ["load:True", "run"]
 
@@ -203,3 +201,161 @@ def test_desktop_flags_disable_development_mode_in_streamlit_config():
         [sys.executable, "-c", code], cwd=root, capture_output=True, text=True, check=True, timeout=60
     )
     assert result.stdout.strip().splitlines()[-1] == "False 8765 127.0.0.1 True"
+
+
+# --- Native window / server child process -----------------------------------
+
+
+def test_parse_args_defaults_to_gui_mode():
+    from desktop_entrypoint import parse_args
+
+    args = parse_args([])
+    assert args.serve_port is None
+    assert args.parent_pid is None
+
+
+def test_parse_args_server_mode_ignores_unknown_args():
+    from desktop_entrypoint import parse_args
+
+    # macOS LaunchServices may append -psn_* to argv
+    args = parse_args(["--serve", "8600", "--parent-pid", "42", "-psn_0_12345"])
+    assert args.serve_port == 8600
+    assert args.parent_pid == 42
+
+
+def test_build_server_cmd_roundtrips_through_parse_args():
+    from desktop_entrypoint import build_server_cmd, parse_args
+
+    cmd = build_server_cmd(8700, parent_pid=99)
+    args = parse_args(cmd[1:])
+    assert (args.serve_port, args.parent_pid) == (8700, 99)
+
+
+def test_build_server_cmd_frozen_reuses_the_executable():
+    import sys as _sys
+
+    from desktop_entrypoint import build_server_cmd
+
+    with patch.object(_sys, "frozen", True, create=True):
+        cmd = build_server_cmd(8700)
+    assert cmd == [_sys.executable, "--serve", "8700"]
+
+
+def test_main_dispatches_server_flag_to_run_server():
+    import desktop_entrypoint
+
+    with (
+        patch.object(desktop_entrypoint, "run_server") as run_server,
+        patch.object(desktop_entrypoint, "run_desktop") as run_desktop,
+    ):
+        desktop_entrypoint.main(["--serve", "8800", "--parent-pid", "7"])
+
+    run_server.assert_called_once_with(8800, 7)
+    run_desktop.assert_not_called()
+
+
+def test_main_without_flags_runs_desktop():
+    import desktop_entrypoint
+
+    with (
+        patch.object(desktop_entrypoint, "run_server") as run_server,
+        patch.object(desktop_entrypoint, "run_desktop") as run_desktop,
+    ):
+        desktop_entrypoint.main([])
+
+    run_desktop.assert_called_once_with()
+    run_server.assert_not_called()
+
+
+def test_wait_until_healthy_stops_when_server_dies():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        dead_port = s.getsockname()[1]
+
+    from desktop_entrypoint import wait_until_healthy
+
+    started = __import__("time").time()
+    assert wait_until_healthy("127.0.0.1", dead_port, 30.0, 0.05, is_alive=lambda: False) is False
+    assert __import__("time").time() - started < 5.0
+
+
+def test_wait_until_healthy_success():
+    from desktop_entrypoint import wait_until_healthy
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), _MockHealthHandler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    try:
+        assert wait_until_healthy("127.0.0.1", server.server_port, 3.0, 0.05) is True
+    finally:
+        server.server_close()
+
+
+def test_run_native_window_reports_missing_backend():
+    """Without pywebview the caller must be told to fall back to the browser."""
+    import sys as _sys
+
+    from desktop_entrypoint import run_native_window
+
+    with patch.dict(_sys.modules, {"webview": None}):  # None => ImportError on import
+        assert run_native_window("127.0.0.1", 8501, object(), None) is False  # type: ignore[arg-type]
+
+
+def test_run_desktop_falls_back_to_browser_and_stops_server():
+    import desktop_entrypoint
+
+    proc = type("P", (), {"wait": lambda self: 0})()
+    with (
+        patch.object(desktop_entrypoint, "find_free_port", return_value=8901),
+        patch.object(desktop_entrypoint, "start_server_process", return_value=(proc, None)),
+        patch.object(desktop_entrypoint, "run_native_window", return_value=False),
+        patch.object(desktop_entrypoint, "launch_browser_when_ready") as launch,
+        patch.object(desktop_entrypoint, "stop_server_process") as stop,
+    ):
+        desktop_entrypoint.run_desktop()
+
+    launch.assert_called_once_with("127.0.0.1", 8901)
+    stop.assert_called_once_with(proc)
+
+
+def test_run_desktop_stops_server_when_window_closes():
+    import desktop_entrypoint
+
+    proc = object()
+    with (
+        patch.object(desktop_entrypoint, "find_free_port", return_value=8902),
+        patch.object(desktop_entrypoint, "start_server_process", return_value=(proc, None)),
+        patch.object(desktop_entrypoint, "run_native_window", return_value=True),
+        patch.object(desktop_entrypoint, "launch_browser_when_ready") as launch,
+        patch.object(desktop_entrypoint, "stop_server_process") as stop,
+    ):
+        desktop_entrypoint.run_desktop()
+
+    launch.assert_not_called()
+    stop.assert_called_once_with(proc)
+
+
+def test_server_child_exits_when_parent_is_gone():
+    """Real subprocess: a --serve child with a dead --parent-pid must terminate by itself."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    child = subprocess.Popen(
+        [sys.executable, str(root / "desktop_entrypoint.py"), "--serve", str(port), "--parent-pid", str(dead.pid)],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        code = child.wait(timeout=60)
+        # SIGTERM from the watchdog (-15 on POSIX); a crash would be a positive exit code
+        assert code <= 0 or sys.platform == "win32"
+    finally:
+        if child.poll() is None:
+            child.kill()

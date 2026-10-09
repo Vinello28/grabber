@@ -388,3 +388,24 @@
 - **Test**: 2 nuovi test in [tests/test_desktop_network.py](tests/test_desktop_network.py) (ordine load -> run, 1 rosso prima del fix; flag => `developmentMode=False`, porta/indirizzo corretti). Suite: **67 passed, 1 skipped**; `ruff` 0 errori; `mypy` invariato (24 errori preesistenti solo in `uvx` senza dipendenze installate).
 - **Verifica reale** (rebuild `Grabber.app`): prima `GET /` = 404, bind `:::8501`, log "Local URL: localhost:3000"; dopo `GET /` = 200, asset JS 200, health ok, bind solo `127.0.0.1:8501`.
 - **Non verificato**: Windows (stessa logica, nessuna macchina Windows disponibile qui). Va confermato con la build CI.
+
+## 18. GitHub Pages: stale version badge
+- Cause: `docs/index.html` hardcoded `v1.0.0`; the Pages workflow only deploys on changes under `docs/`, so new tags never updated it.
+- Fix: badge (`#app-version`) is now filled client-side from the GitHub `releases/latest` API (`docs/script.js`); static fallback set to `v1.2.0`.
+- Not changed: `pyproject.toml`, `src/core/version.py`, `grabber.spec` still say `1.0.0` in source (CI stamps `version.py` only for release builds).
+
+## 19. Desktop: app invisible in the macOS Dock (headless server, browser as UI)
+**Root cause (riprodotto con `open dist/Grabber.app`)**: il processo resta vivo (health `ok`) ma non si registra mai con LaunchServices (`lsappinfo` non lo trova): nessuna `NSApplication`/finestra, quindi l'icona nel Dock sparisce subito. L'utente la percepisce come "chiusa" e non ha modo di quittarla (Cmd+Q, Dock).
+**Design**: finestra nativa con `pywebview`. Streamlit installa signal handler (solo main thread) e pywebview vuole il main thread su macOS -> il server gira in un processo figlio (stesso eseguibile, `--serve PORT`), la GUI nel processo principale. Chiudere la finestra termina il figlio. Se `pywebview` non e' disponibile (es. Linux senza GTK/Qt) -> fallback al comportamento precedente (browser).
+- [x] 1. Test (rossi): `build_server_cmd`, `--serve` dispatch, wait-for-server, fallback senza webview, `run_server` carica config prima di `bootstrap.run`
+- [x] 2. `desktop_entrypoint.py`: `run_server`, `serve_in_subprocess`, `run_native_window`, fallback browser, watchdog orfano
+- [x] 3. `requirements.txt` (`pywebview` non-Linux), `grabber.spec` (hiddenimports `webview`, `NSAllowsLocalNetworking`)
+- [x] 4. Suite + ruff
+- [x] 5. Rebuild PyInstaller e verifica reale: app registrata in LaunchServices, finestra presente, chiusura finestra => nessun processo residuo
+
+### Review Section — Native desktop window
+- **Fix**: [desktop_entrypoint.py](desktop_entrypoint.py) ora ha due ruoli: processo GUI (finestra `pywebview` nel main thread, splash immediato, poi carica Streamlit) e processo server (`--serve PORT --parent-pid PID`, stesso eseguibile, log in `~/Library/Caches/Grabber/server.log`). Chiudere la finestra/Cmd+Q termina il server; se il GUI muore di colpo il watchdog (`psutil`) spegne il server. Senza backend webview (Linux) -> fallback al browser come prima.
+- **Packaging**: `pywebview` in `requirements.txt` (non-Linux), `webview` in hiddenimports, `NSAllowsLocalNetworking` nell'Info.plist, `ALLOW_DOWNLOADS` per `st.download_button`.
+- **Test**: 12 nuovi test (dispatch argv, cmd del figlio, fallback browser, stop server, figlio orfano con subprocess reale). Suite: **79 passed, 1 skipped**; `ruff` ok.
+- **Verifica reale** (rebuild `Grabber.app`, macOS): app registrata in LaunchServices (`in front`), finestra 1440x900 on-screen, WebKit connesso a `:8501` (GET / = 200), `quit` => 0 processi residui, `kill -9` del GUI => server figlio terminato entro pochi secondi.
+- **Non verificato**: aspetto visivo (screenshot non permesso), download dall'export dentro la finestra, Windows (WebView2) e Linux (build CI senza pywebview: fallback browser).

@@ -137,3 +137,8 @@
   1. Always call `bootstrap.load_config_options(flag_options)` right before `bootstrap.run(...)` in `desktop_entrypoint.py`.
   2. A health check is not proof the UI is served: verify a packaged build by requesting `GET /` (expect 200) and a static asset, not only `/_stcore/health`.
   3. Never mark a packaging/startup fix done from unit tests alone: rebuild the bundle and run the real binary.
+
+## Desktop App Presence (macOS Dock / Windows taskbar)
+- A PyInstaller `.app` that only runs a Streamlit server and opens the system browser never registers with LaunchServices: the Dock icon vanishes seconds after launch while the process keeps running, so users think it "crashed" and cannot quit it.
+- **Rule**: a desktop build must own a native window (pywebview). Streamlit needs the main thread (signal handlers) and so does Cocoa, so run the server in a child process of the same executable (`--serve`) and tie its lifetime to the GUI (terminate on close + parent-pid watchdog). Verify with `lsappinfo` / window list on the real bundle, not just `/_stcore/health`.
+

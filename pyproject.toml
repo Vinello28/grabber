@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "grabber"
-version = "1.0.0"
+version = "1.2.0"
 description = "Big Data Out-of-Core Analytical Query Engine & GUI"
 readme = "README.md"
 authors = [{ name = "Gabriele Vianello", email = "vianello.tech@gmail.com" }]
