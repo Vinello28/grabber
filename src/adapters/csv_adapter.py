@@ -17,8 +17,9 @@ from src.core.models import ColumnMeta, DatasetSchema, DataType
 class CsvAdapter(IDatasetAdapter):
     """Adapter for CSV datasets."""
 
-    def __init__(self, delimiter: str | None = None):
+    def __init__(self, delimiter: str | None = None, parallel: bool | None = None):
         self.delimiter = delimiter
+        self.parallel = parallel
 
     def can_handle(self, path: str) -> bool:
         lower = path.lower()
@@ -59,7 +60,12 @@ class CsvAdapter(IDatasetAdapter):
     def get_source_description(self, path: str) -> dict[str, Any]:
         return {"format": "csv"}
 
-    def build_sql_source(self, path_or_files: Any, delim: str | None = None) -> str:
+    def build_sql_source(
+        self,
+        path_or_files: Any,
+        delim: str | None = None,
+        parallel: bool | None = None,
+    ) -> str:
         """Build the DuckDB read_csv SQL expression."""
         if isinstance(path_or_files, list):
             file_paths = [p.replace("'", "''") for p in path_or_files]
@@ -77,6 +83,14 @@ class CsvAdapter(IDatasetAdapter):
         if delim is None:
             delim = self.sniff_delimiter(sample_file) if sample_file else ","
 
+        use_parallel = self.parallel if parallel is None else parallel
+        if use_parallel is False:
+            parallel_clause = ", parallel=false"
+        elif use_parallel is True:
+            parallel_clause = ", parallel=true"
+        else:
+            parallel_clause = ""
+
         return (
             f"read_csv({files_expr}, "
             f"delim='{delim}', "
@@ -84,7 +98,7 @@ class CsvAdapter(IDatasetAdapter):
             f"quote='\"', "
             f"escape='\"', "
             f"strict_mode=false, "
-            f"null_padding=true, "
+            f"null_padding=true{parallel_clause}, "
             f"ignore_errors=true, "
             f"auto_detect=true, "
             f"union_by_name=true)"
@@ -108,11 +122,19 @@ class CsvAdapter(IDatasetAdapter):
         delim = self.sniff_delimiter(sample_file)
         sql_source = self.build_sql_source(path_or_files, delim=delim)
 
-        # Inspect table structure
-        describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
-
-        # Fetch sample rows for type inference & preview
-        sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+        # Inspect table structure and sample rows with automatic fallback if parallel scanner fails
+        try:
+            describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
+            sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "parallel scanner does not support null_padding" in err_msg or "disable the parallel csv reader with parallel=false" in err_msg:
+                self.parallel = False
+                sql_source = self.build_sql_source(path_or_files, delim=delim, parallel=False)
+                describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
+                sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+            else:
+                raise
 
         columns: list[ColumnMeta] = []
         for _, row in describe_df.iterrows():

@@ -62,12 +62,46 @@ class DuckDBEngine(IQueryEngine):
         self.current_schema: DatasetSchema | None = None
         self.current_view_name = "current_dataset"
         self.current_dataset_path: str | None = None
+        self._current_files: list[str] = []
         self.current_sql_source: str | None = None
 
         # Adapters
         self.csv_adapter = CsvAdapter()
         self.parquet_adapter = ParquetAdapter()
         self.xml_adapter = XmlAdapter()
+
+    def _is_parallel_csv_conflict_error(self, e: Exception) -> bool:
+        msg = str(e).lower()
+        return "parallel scanner does not support null_padding" in msg or "disable the parallel csv reader with parallel=false" in msg
+
+    def _fallback_csv_to_sequential_if_needed(self, e: Exception) -> bool:
+        if not self._is_parallel_csv_conflict_error(e):
+            return False
+        if not self.current_schema or self.current_schema.source_format != "csv":
+            return False
+        if getattr(self.csv_adapter, "parallel", None) is False:
+            return False
+        logger.warning(
+            "Conflitto scanner CSV parallelo rilevato con null_padding e newline quotate: "
+            "fallback automatico a parallel=false per %s",
+            self.current_dataset_path,
+        )
+        self.csv_adapter.parallel = False
+        files = getattr(self, "_current_files", None) or self.current_dataset_path
+        self.current_sql_source = self.csv_adapter.build_sql_source(files, parallel=False)
+        self.conn.execute(
+            f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {self.current_sql_source}"
+        )
+        return True
+
+    def _execute_sql(self, sql: str) -> duckdb.DuckDBPyConnection:
+        """Execute SQL with transparent fallback to sequential CSV reader if parallel conflict occurs."""
+        try:
+            return self.conn.execute(sql)
+        except Exception as e:
+            if self._fallback_csv_to_sequential_if_needed(e):
+                return self.conn.execute(sql)
+            raise
 
     def _configure_connection(self) -> None:
         """Apply performance and memory safety pragmas."""
@@ -129,8 +163,10 @@ class DuckDBEngine(IQueryEngine):
         fmt = analysis["format"]
         files = analysis["files"]
         self.current_dataset_path = path
+        self._current_files = files
 
         if fmt == "csv":
+            self.csv_adapter.parallel = None
             self.current_schema = self.csv_adapter.inspect_schema(files, self.conn)
             sql_source = self.csv_adapter.build_sql_source(files)
         elif fmt == "parquet":
@@ -161,7 +197,7 @@ class DuckDBEngine(IQueryEngine):
             # Estimate or calculate row count
             if self.current_schema.row_count_estimate is None:
                 try:
-                    count_res = self.conn.execute(f"SELECT COUNT(*) FROM {self.current_view_name}").fetchone()
+                    count_res = self._execute_sql(f"SELECT COUNT(*) FROM {self.current_view_name}").fetchone()
                     if count_res:
                         self.current_schema.row_count_estimate = count_res[0]
                 except Exception:
@@ -233,7 +269,7 @@ class DuckDBEngine(IQueryEngine):
         sql = QueryBuilder.build_select_query(table_ref, spec, schema_cols)
 
         t0 = time.time()
-        cursor = self.conn.execute(sql)
+        cursor = self._execute_sql(sql)
         elapsed = time.time() - t0
 
         df = cursor.fetchdf()
@@ -262,7 +298,7 @@ class DuckDBEngine(IQueryEngine):
             spec,
             self.current_schema.columns,
         )
-        res = self.conn.execute(sql).fetchone()
+        res = self._execute_sql(sql).fetchone()
         return res[0] if res else 0
 
     def get_distinct_values(self, column: str, limit: int = 100) -> list[Any]:
@@ -280,7 +316,7 @@ class DuckDBEngine(IQueryEngine):
             f"LIMIT {limit}"
         )
         try:
-            res = self.conn.execute(query).fetchall()
+            res = self._execute_sql(query).fetchall()
             return [r[0] for r in res]
         except Exception:
             return []
@@ -317,7 +353,7 @@ class DuckDBEngine(IQueryEngine):
             """
 
         try:
-            row = self.conn.execute(query).fetchone()
+            row = self._execute_sql(query).fetchone()
             if row:
                 return {
                     "count_non_null": row[0],
@@ -357,7 +393,7 @@ class DuckDBEngine(IQueryEngine):
             schema_columns=self.current_schema.columns,
         )
 
-        res = self.conn.execute(sql).fetchone()
+        res = self._execute_sql(sql).fetchone()
         exported_count = int(res[0]) if res and res[0] is not None else 0
 
         if progress_callback:

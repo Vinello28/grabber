@@ -150,3 +150,15 @@
 ## Streamlit fragments con `run_every`
 - Il timer di `st.fragment(run_every=N)` gira nel frontend (il server manda un `auto_rerun` con intervallo e `fragment_id`): un client WebSocket grezzo non vede aggiornamenti se non emula quel messaggio.
 - **Rule**: dentro un frammento scrivere con `st.*` nel container in cui viene chiamato (`with st.sidebar:`), non con `st.sidebar.*`: il rerun sostituisce il contenuto del frammento ma accoda gli elementi scritti su container esterni.
+
+## DuckDB CSV Scanner: Conflitto tra Newlines Quotate e `null_padding`
+- Lo scanner parallelo di DuckDB per i file CSV suddivide i file in blocchi di byte arbitrari per la scansione concorrente tra thread worker.
+- Se un file CSV contiene campi testuali multiriga (newline `\n` racchiusi tra apici `""`) ed è abilitato `null_padding=true` (necessario per non scartare righe con colonne omesse a fine riga), DuckDB solleva:
+  `CSV Error: The parallel scanner does not support null_padding in conjunction with quoted new lines. Please disable the parallel csv reader with parallel=false`.
+- **Rule**:
+  1. Non disabilitare mai lo scanner parallelo (`parallel=false`) come default globale su tutti i file: i dataset CSV puliti devono continuare a sfruttare la massima velocità multi-core.
+  2. Mantenere `parallel=None` (parallelo abilitato/auto) di default e implementare un meccanismo di fallback automatico trasparente:
+     - In `CsvAdapter.inspect_schema` e in `DuckDBEngine._execute_sql`, intercettare l'eccezione specifica di conflitto e commutare dinamicamente a `parallel=false` solo per il dataset che genera l'errore, rieseguendo l'operazione al volo.
+     - Resettare lo stato a `parallel=None` a ogni caricamento/cambio dataset in `connect_dataset` per garantire che i dataset successivi continuino a viaggiare alla massima velocità multi-core.
+
+

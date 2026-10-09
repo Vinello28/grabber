@@ -501,5 +501,107 @@ L'obiettivo è consentire:
   - Suite completa: **84 passed, 1 skipped, 1 deselected, 0 failed** (i test esclusi richiedono dataset locali non tracciati in git).
   - Linter: `ruff check` superato con 0 errori (`All checks passed!`).
 
+## 24. Risoluzione conflitto scanner CSV parallelo DuckDB con `null_padding` e newlines quotate
+
+**Contesto ed Errore**:
+DuckDB solleva `CSV Error: The parallel scanner does not support null_padding in conjunction with quoted new lines. Please disable the parallel csv reader with parallel=false` durante l'ispezione o l'interrogazione di file CSV (es. `classified_multiclass_aiuti_2016.csv`) che contengono campi testuali multiriga (newline `\n` all'interno di quote `""`) quando `null_padding=true` è abilitato.
+Poiché lo scanner parallelo divide il file in chunk a byte arbitrari, non è in grado di distinguere in modo deterministico una riga corta incompleta (`null_padding`) da un record spezzato contenente newline dentro apici.
+DuckDB richiede esplicitamente `parallel=false` per questi scenari.
+
+**Design & Soluzione**:
+1. `src/adapters/csv_adapter.py`:
+   - Aggiungere il parametro `parallel: bool = False` sia nel costruttore `CsvAdapter.__init__` sia in `build_sql_source(path_or_files, delim=None, parallel=None)`.
+   - Includere esplicitamente `parallel=false` (o `parallel={str(parallel).lower()}`) nella query generata da `read_csv(...)`.
+   - Garantire che sia `inspect_schema` sia `build_sql_source` utilizzino `parallel=false` di default, azzerando i crash con `null_padding` e quoted newlines pur mantenendo prestazioni C++ vettorizzate eccellenti.
+2. `tests/`:
+   - Scrivere test automatici (`tests/test_csv_adapter_parallel_config.py`):
+     - Test unitario che verifica la presenza di `parallel=false` nell'espressione SQL generata da `build_sql_source`.
+     - Test di esecuzione DuckDB su CSV sintetico con celle contenenti newlines quotate e righe con colonne mancanti (`null_padding`).
+     - Test end-to-end su `DuckDBEngine.connect_dataset()` e `execute_query()` sul file reale `classified_multiclass_aiuti_2016.csv` (se presente) o fixture equivalente.
+3. Verifica e Regressione:
+   - Esecuzione `uv run --extra dev pytest tests/test_csv_adapter_parallel_config.py`
+   - Esecuzione `uv run ruff check`
+
+**Passi**:
+- [x] 1. Test unitari e di regressione per `CsvAdapter` con `parallel=false` e CSV con newline quotate
+- [x] 2. Aggiornamento `src/adapters/csv_adapter.py` con parametro e valore predefinito `parallel=false`
+- [x] 3. Esecuzione test suite e verifica su file reale `classified_multiclass_aiuti_2016.csv`
+- [x] 4. Controllo linter `ruff`
+- [x] 5. Aggiornamento review in `tasks/todo.md` e registrazione lezione in `tasks/lessons.md`
+
+### Review Section — Risoluzione conflitto scanner CSV parallelo DuckDB con `null_padding` e newlines quotate
+- **Causa Radice**:
+  - In DuckDB, quando `null_padding=true` (utilizzato per evitare lo scarto silente di righe con colonne omesse o non allineate alla fine del record) e il file CSV contiene campi testuali multiriga (newlines `\n` all'interno di quote `""`), lo scanner parallelo non è in grado di tracciare in sicurezza i confini di riga tra i blocchi di byte esaminati in parallelo dai thread worker.
+  - DuckDB solleva un errore di sistema esplicito: `The parallel scanner does not support null_padding in conjunction with quoted new lines. Please disable the parallel csv reader with parallel=false`.
+- **Modifiche implementate**:
+  - `src/adapters/csv_adapter.py`:
+    - Aggiunto parametro `parallel: bool = False` nel costruttore `CsvAdapter.__init__`.
+    - Estesa la firma di `build_sql_source(path_or_files, delim=None, parallel=None)` per supportare la configurazione dell'opzione parallela, con fallback al default dell'adapter (`parallel=False`).
+    - Incluso `parallel={parallel_expr}` (`parallel=false` di default) nell'espressione SQL generata per `read_csv(...)`.
+- **Test e Verifiche**:
+  - Creati 4 test completi in `tests/test_csv_adapter_parallel_config.py`:
+    1. Verifica che `build_sql_source` includa `parallel=false` di default.
+    2. Verifica che `parallel=true` possa essere configurato esplicitamente se richiesto.
+    3. Test di isolamento con CSV sintetico contenente celle con newline quotate e righe ragged con colonne mancanti (`null_padding`): parsing ed esecuzione query senza errori con preservazione di `None`/`NaN`.
+    4. Test end-to-end sul file reale dell'utente `classified_multiclass_aiuti_2016.csv`: connessione, ispezione schema (25 colonne rilevate), stima righe (8378 righe), esecuzione query, conteggi e streaming export a CSV e Parquet completati con successo.
+  - Suite di test: **83 passed, 1 skipped**.
+  - Linter: `ruff check` superato con 0 errori (`All checks passed!`).
+
+## 25. Scanner CSV parallelo attivo di default con fallback dinamico a `parallel=false` solo in caso di conflitto
+
+**Contesto e Obiettivo**:
+Il precedente fix aveva impostato `parallel=false` come default fisso per tutti i CSV per evitare il crash su file problematici come `classified_multiclass_aiuti_2016.csv`.
+Tuttavia, disabilitare lo scanner parallelo su TUTTI i file priva i dataset CSV standard e puliti delle massime prestazioni multi-core vettorizzate di DuckDB.
+L'obiettivo è:
+1. Mantenere attivo di default lo scanner parallelo multi-thread (`parallel=None` / auto DuckDB) per tutti i file CSV puliti.
+2. Intercettare l'errore specifico di DuckDB (`The parallel scanner does not support null_padding in conjunction with quoted new lines`) sia in fase di ispezione schema (`inspect_schema`), sia durante la creazione vista (`connect_dataset`), sia durante l'esecuzione di query (`execute_query`, `count_matching_rows`, `get_distinct_values`, `export_query`).
+3. Attivare in modo trasparente e automatico il fallback a `parallel=false` solo per i dataset che presentano tale conflitto, senza bloccare o penalizzare i file standard.
+
+**Design**:
+- `src/adapters/csv_adapter.py`:
+  - `CsvAdapter.__init__(parallel: bool | None = None)` con default a `None` (parallelo abilitato/auto).
+  - `build_sql_source`: include `parallel=false` solo se `use_parallel is False`, `parallel=true` se `True`, omette l'opzione se `None` lasciando a DuckDB la scansione parallela completa.
+  - `inspect_schema`: cattura l'eccezione di conflitto parallelo su `LIMIT 1000`, imposta `self.parallel = False`, ricompila `sql_source` con `parallel=false` e ripete l'ispezione.
+- `src/engine/duckdb_engine.py`:
+  - Traccia `self._current_files` e reimposta `self.csv_adapter.parallel = None` all'inizio di `connect_dataset` per consentire a ogni nuovo dataset di iniziare a piena velocità parallela.
+  - Implementa `_fallback_csv_to_sequential_if_needed(e: Exception)` per rigenerare la vista con `parallel=false` al volo se una query colpisce una riga problematica più avanti nel dataset.
+  - Protegge l'esecuzione in `execute_query`, `count_matching_rows`, `get_distinct_values`, `get_column_stats`, `export_query` e nel calcolo di stima in `connect_dataset`.
+- `tests/test_csv_adapter_parallel_config.py`:
+  - Test per file puliti: verifica che non contengano `parallel=false` di default e usino lo scanner parallelo.
+  - Test per file con newline quotate e `null_padding`: verifica che il fallback automatico si attivi trasparentemente sia in schema inspection sia durante l'esecuzione query su DuckDBEngine.
+
+**Passi**:
+- [x] 1. Aggiornamento `src/adapters/csv_adapter.py` (default `parallel=None`, fallback in `inspect_schema`)
+- [x] 2. Aggiornamento `src/engine/duckdb_engine.py` (fallback trasparente in `_fallback_csv_to_sequential_if_needed` e metodi di query)
+- [x] 3. Aggiornamento ed espansione test in `tests/test_csv_adapter_parallel_config.py`
+- [x] 4. Esecuzione test suite completa e verifica linter con `ruff`
+- [x] 5. Verifica su file reale e file sintetici
+- [x] 6. Documentazione review in `tasks/todo.md` e lezione in `tasks/lessons.md`
+
+### Review Section — Scanner CSV parallelo attivo di default con fallback dinamico a `parallel=false` solo in caso di conflitto
+- **Design & Modifiche implementate**:
+  - `src/adapters/csv_adapter.py`:
+    - `CsvAdapter.__init__(parallel=None)`: `parallel` è impostato di default su `None`, garantendo che lo scanner parallelo multi-thread di DuckDB rimanga attivo su tutti i file CSV standard.
+    - `build_sql_source`: include `parallel=false` solo se `use_parallel is False`, omette la clausola se `None` lasciando agire DuckDB in parallelo.
+    - `inspect_schema`: intercetta l'eccezione di conflitto DuckDB su `LIMIT 1000` (se presente nei primi chunk), imposta `self.parallel = False`, ricompila `sql_source` con `parallel=false` ed esegue l'ispezione senza crash.
+  - `src/engine/duckdb_engine.py`:
+    - Tracciamento di `self._current_files` e reset a `self.csv_adapter.parallel = None` all'inizio di `connect_dataset`, garantendo che ogni nuovo dataset caricato parta con scansione parallela completa.
+    - Implementato `_fallback_csv_to_sequential_if_needed(e: Exception)` per identificare lo specifico errore di conflitto parallelo DuckDB e ricreare dinamicamente la vista `current_dataset` con `parallel=false`.
+    - Centralizzata l'esecuzione delle query tramite `_execute_sql(sql)` su `execute_query`, `count_matching_rows`, `get_distinct_values`, `get_column_stats`, `export_query` e stima righe in `connect_dataset`, garantendo il retry trasparente e istantaneo della query se una riga problematica compare più avanti nel file.
+- **Test e Verifiche**:
+  - `tests/test_csv_adapter_parallel_config.py`: 6 test passati con successo:
+    1. Verifica che `build_sql_source` lasci attivo lo scanner parallelo di default (`parallel=false` non presente).
+    2. Verifica che le opzioni esplicite `parallel=True` e `parallel=False` siano rispettate.
+    3. Test con dataset pulito: verifica che le query vengano eseguite senza attivare il fallback sequenziale (`parallel` rimane `None`).
+    4. Test del metodo di supporto `_fallback_csv_to_sequential_if_needed`.
+    5. Test del file reale `classified_multiclass_aiuti_2016.csv`: verifica che il fallback scatti automaticamente, impostando `parallel=False` solo per questo dataset ed eseguendo correttamente tutte le query, conteggi e valori distinti.
+    6. Test di cambio dataset: verifica che passando dal dataset problematico a uno pulito, lo scanner torni automaticamente in modalità parallela (`parallel=None`).
+  - Suite completa: **85 passed, 1 skipped**.
+  - Linter: `ruff check` superato con 0 errori (`All checks passed!`).
+
+
+
+
+
 
 
