@@ -142,3 +142,7 @@
 - A PyInstaller `.app` that only runs a Streamlit server and opens the system browser never registers with LaunchServices: the Dock icon vanishes seconds after launch while the process keeps running, so users think it "crashed" and cannot quit it.
 - **Rule**: a desktop build must own a native window (pywebview). Streamlit needs the main thread (signal handlers) and so does Cocoa, so run the server in a child process of the same executable (`--serve`) and tie its lifetime to the GUI (terminate on close + parent-pid watchdog). Verify with `lsappinfo` / window list on the real bundle, not just `/_stcore/health`.
 
+
+## HTTPS in frozen builds
+- Mai affidarsi ai CA path di default di OpenSSL in un'app PyInstaller: puntano alla macchina di build. Usare sempre un contesto `ssl` con `certifi.where()` per ogni richiesta di rete.
+- Non inghiottire gli errori di rete silenziosamente: "nessuna release" e "errore TLS" sono casi diversi per l'utente.

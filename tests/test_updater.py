@@ -60,3 +60,14 @@ def test_offline_or_nonexistent_repo_graceful_handling():
     updater = GitHubUpdater(repo="nonexistent_user_xyz/nonexistent_repo_abc_123")
     res = updater.check_for_updates(timeout_sec=1.0)
     assert res is None
+
+
+def test_ssl_context_trusts_certifi_bundle_independent_of_openssl_paths():
+    """Frozen builds ship an OpenSSL whose default CA path does not exist on user machines."""
+    from unittest.mock import patch
+
+    from src.core.updater import _ssl_context
+
+    with patch("ssl.create_default_context") as create:
+        _ssl_context()
+    assert create.call_args.kwargs["cafile"].endswith("cacert.pem")

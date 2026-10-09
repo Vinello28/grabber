@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -19,6 +20,22 @@ from typing import Any
 from packaging.version import parse as parse_version
 
 from src.core.version import GITHUB_REPO, __version__
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """TLS context trusting the certifi CA bundle.
+
+    A frozen build (PyInstaller) ships OpenSSL configured for the CA path of the
+    machine that built it (e.g. /Library/Frameworks/Python.framework/... on CI),
+    which does not exist on user machines: every HTTPS request would then fail
+    with CERTIFICATE_VERIFY_FAILED.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 @dataclass
@@ -64,7 +81,7 @@ class GitHubUpdater:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=timeout_sec) as response:
+            with urllib.request.urlopen(req, timeout=timeout_sec, context=_ssl_context()) as response:
                 if response.status != 200:
                     return None
                 data = json.loads(response.read().decode("utf-8"))
@@ -143,7 +160,7 @@ class GitHubUpdater:
         tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
 
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, context=_ssl_context()) as resp:
                 total_size = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0
 

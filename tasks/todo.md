@@ -409,3 +409,10 @@
 - **Test**: 12 nuovi test (dispatch argv, cmd del figlio, fallback browser, stop server, figlio orfano con subprocess reale). Suite: **79 passed, 1 skipped**; `ruff` ok.
 - **Verifica reale** (rebuild `Grabber.app`, macOS): app registrata in LaunchServices (`in front`), finestra 1440x900 on-screen, WebKit connesso a `:8501` (GET / = 200), `quit` => 0 processi residui, `kill -9` del GUI => server figlio terminato entro pochi secondi.
 - **Non verificato**: aspetto visivo (screenshot non permesso), download dall'export dentro la finestra, Windows (WebView2) e Linux (build CI senza pywebview: fallback browser).
+
+## 20. Updater: "Verifica Aggiornamenti" non trova la nuova versione (v1.2.0 -> v1.2.9)
+
+- [x] Root cause: la build CI (setup-python) incorpora un OpenSSL con CA path `/Library/Frameworks/Python.framework/Versions/3.12/etc/openssl`, inesistente sul Mac dell'utente -> `CERTIFICATE_VERIFY_FAILED`, inghiottito da `except Exception` -> UI "Nessuna release trovata".
+- [x] Fix: `src/core/updater.py` usa un `ssl` context basato su `certifi` per check e download; `certifi` esplicito in `requirements.txt`.
+- [x] Test: `test_ssl_context_trusts_certifi_bundle_...`; repro con `SSL_CERT_FILE/DIR=/nonexistent`: prima FAIL, dopo OK. 80 passed, ruff ok.
+- [ ] Non verificato: build CI reale; chi ha v1.2.0 deve aggiornare a mano una volta (il fix è nell'app, non nel server).
