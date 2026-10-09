@@ -416,3 +416,9 @@
 - [x] Fix: `src/core/updater.py` usa un `ssl` context basato su `certifi` per check e download; `certifi` esplicito in `requirements.txt`.
 - [x] Test: `test_ssl_context_trusts_certifi_bundle_...`; repro con `SSL_CERT_FILE/DIR=/nonexistent`: prima FAIL, dopo OK. 80 passed, ruff ok.
 - [ ] Non verificato: build CI reale; chi ha v1.2.0 deve aggiornare a mano una volta (il fix è nell'app, non nel server).
+
+## 21. GitHub Pages: allineamento testi alla finestra nativa
+- [x] `docs/index.html`: arch tag "Streamlit Reactive GUI · Native Window"; card macOS (finestra nativa al posto di "background daemon"); card Linux (apre il browser, niente finestra); macOS "Apple Silicon" (build su `macos-latest` arm64, `target_arch=None`, nessun universal2).
+- [x] `tests/test_github_pages.py`: 6 passed.
+- Non modificato: i mock del terminale (`run.sh`/`run.bat` da sorgente aprono ancora il browser, quindi corretti).
+- Nota: il deploy parte solo con push su `main` che tocca `docs/**`.
