@@ -15,6 +15,23 @@ import sys
 from pathlib import Path
 
 
+def build_streamlit_cmd(sys_executable: str, app_path: Path) -> list[str]:
+    """Construct command arguments to launch Streamlit safely on 127.0.0.1 loopback."""
+    return [
+        sys_executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app_path),
+        "--server.address=127.0.0.1",
+        "--browser.serverAddress=127.0.0.1",
+        "--server.headless=false",
+        "--server.enableCORS=false",
+        "--server.enableXsrfProtection=false",
+        "--browser.gatherUsageStats=false",
+    ]
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         with contextlib.suppress(Exception):
@@ -34,15 +51,7 @@ def main():
     print("=" * 60)
 
     # Launch Streamlit
-    cmd = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.headless=false",
-        "--browser.gatherUsageStats=false",
-    ]
+    cmd = build_streamlit_cmd(sys.executable, app_path)
 
     try:
         subprocess.run(cmd, check=True)

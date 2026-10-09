@@ -303,5 +303,24 @@
   - Linter: `uvx ruff check .` passed with **0 errors**.
   - Type checking: `uvx mypy` passed with **0 issues in 42 source files**.
 
-
+### 15. Fix Windows and macOS "Accesso negato da localhost" Desktop Launch (Completed) <!-- id: 14 -->
+- [x] 1. Diagnosi e Specifica Tecnica <!-- id: 14.1 -->
+  - Identificata causa root: `server.address = "localhost"` genera binding IPv4 su `127.0.0.1` mentre Edge/Chrome su Windows e Safari/Chrome su macOS risolvono con priorità su IPv6 `::1` o applicano restrizioni proxy/sandbox (`ERR_NETWORK_ACCESS_DENIED`, `403 Forbidden`).
+  - Identificate cause secondarie: porta fissa 8501 con conflitti di permessi (`WinError 10013`), CORS/XSRF attivi su app locale (possibile `HTTP 403`), e apertura immediata del browser prima dell'avvio completo del server Uvicorn.
+- [x] 2. Implementazione Correzione in `desktop_entrypoint.py` <!-- id: 14.2 -->
+  - Implementata utility robusta di allocazione porta libera (`find_free_port`) che testa `127.0.0.1` a partire da 8501 con fallback a porta effimera OS.
+  - Impostato `server.address = "127.0.0.1"` e `browser.serverAddress = "127.0.0.1"`.
+  - Disabilitati `server.enableCORS = False` e `server.enableXsrfProtection = False` per la modalità desktop.
+  - Impostato `server.headless = True` e implementato thread daemon con polling health check su `/_stcore/health` (con bypass proxy di sistema) prima di chiamare `webbrowser.open(f"http://127.0.0.1:{port}")`.
+  - Aggiunto logging degli errori critici di startup in `get_app_cache_dir() / "startup_error.log"`.
+- [x] 3. Allineamento in `run.py` <!-- id: 14.3 -->
+  - Estratta funzione modulare `build_streamlit_cmd`.
+  - Configurato `--server.address=127.0.0.1`, `--browser.serverAddress=127.0.0.1`, `--server.enableCORS=false`, `--server.enableXsrfProtection=false`.
+- [x] 4. Test di Regressione & Qualità <!-- id: 14.4 -->
+  - Scritta unit test suite [tests/test_desktop_network.py](tests/test_desktop_network.py) (9 test: porta libera, porta occupata, fallback effimero, flag Streamlit, health check browser polling, fallback timeout, flag `run.py`).
+  - Test suite completa: **59 passed, 1 skipped in 28.11s**.
+  - Linter: `uvx ruff check .` passato con **0 errori**.
+  - Type checking: `uvx mypy` passato con **0 problemi**.
+- [x] 5. Verifica Documentazione & Lessons Learned <!-- id: 14.5 -->
+  - Aggiornato [tasks/lessons.md](tasks/lessons.md) con le regole anti-regressione per localhost, loopback IP numerico e browser health check.
 

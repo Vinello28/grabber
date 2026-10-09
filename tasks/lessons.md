@@ -108,3 +108,18 @@
 - Hardcoding `__version__ = "1.0.0"` in Python source files causes PyInstaller bundles to freeze stale version numbers even when built from Git tags (e.g. `v1.2.0`), which causes in-app updaters to immediately display false update notifications.
 - **Rule**: Always automate version synchronization in the CI/CD pipeline before running PyInstaller (e.g. injecting `${GITHUB_REF_NAME#v}` into `src/core/version.py`), and provide a local Git fallback in the build script.
 
+## Desktop App Loopback Binding, Localhost Resolution & Browser Health Check
+- Hardcoding `server.address = "localhost"` breaks local desktop apps on both Windows and macOS:
+  1. In Streamlit/Uvicorn, `"localhost"` binds exclusively to IPv4 `127.0.0.1`.
+  2. Windows and macOS DNS resolvers prioritize IPv6 `::1`, causing Chromium (Edge, Chrome) and Safari to attempt connecting to `[::1]:<port>` where nothing is listening, returning "Access to localhost was denied" or connection failure.
+  3. Windows Defender, corporate proxy/WPAD configurations, and VPNs frequently intercept or block HTTP requests directed to the FQDN `localhost` (`ERR_NETWORK_ACCESS_DENIED`), whereas raw IP `127.0.0.1` is universally bypassed.
+  4. Streamlit CORS and XSRF protections are active by default and can block local WebSocket or asset requests with `HTTP 403 Forbidden`.
+  5. Launching the browser immediately (`server.headless = False`) creates a race condition where the browser opens before Uvicorn has bound and started listening, showing a premature error page.
+- **Rule**:
+  1. Always bind desktop applications explicitly to numerical loopback `127.0.0.1` (`server.address = "127.0.0.1"` and `browser.serverAddress = "127.0.0.1"`).
+  2. Always disable CORS and XSRF for standalone local desktop bundles (`server.enableCORS = False`, `server.enableXsrfProtection = False`).
+  3. Never hardcode fixed ports: dynamically probe and allocate a free port on `127.0.0.1` (testing 8501..8550 with fallback to OS ephemeral port 0).
+  4. Always run desktop Streamlit in headless mode (`server.headless = True`) and use a background thread to poll the healthcheck endpoint `http://127.0.0.1:<port>/_stcore/health` (bypassing proxies via `ProxyHandler({})`) before calling `webbrowser.open()`.
+  5. Log critical startup crashes to `get_app_cache_dir() / "startup_error.log"` so errors in windowless (`console=False`) executables can be diagnosed.
+
+
