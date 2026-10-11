@@ -5,6 +5,7 @@ Tests for multi-process parallel XML-to-Parquet conversion (cores - 2).
 import os
 
 import duckdb
+import pytest
 
 from src.adapters.xml_adapter import XmlAdapter, _convert_single_xml_worker
 
@@ -21,7 +22,10 @@ def test_worker_calculation():
 def test_convert_single_xml_worker_standalone(tmp_path):
     """Verify standalone worker can parse an XML file and output Parquet parts."""
     sample_file = "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_01.xml"
+    if not os.path.exists(sample_file):
+        pytest.skip(f"File {sample_file} non presente")
     out_dir = tmp_path / "cache_worker"
+
     out_dir.mkdir()
 
     file_size, rows = _convert_single_xml_worker(
@@ -50,6 +54,8 @@ def test_parallel_xml_conversion_multi_files(tmp_path):
         "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_02.xml",
         "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_03.xml",
     ]
+    if any(not os.path.exists(f) for f in files):
+        pytest.skip("File di test XML non presenti localmente")
     out_dir = tmp_path / "cache_parallel"
     xml_adapter = XmlAdapter()
 
@@ -89,7 +95,10 @@ def test_sequential_fallback_single_worker(tmp_path):
         "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_01.xml",
         "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_02.xml",
     ]
+    if any(not os.path.exists(f) for f in files):
+        pytest.skip("File di test XML non presenti localmente")
     out_dir = tmp_path / "cache_seq"
+
     xml_adapter = XmlAdapter()
 
     xml_adapter.convert_to_parquet_streaming(

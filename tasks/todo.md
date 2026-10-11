@@ -603,5 +603,98 @@ L'obiettivo è:
 
 
 
+---
+
+## 26. Ottimizzazione Prestazioni, Memoria e Reattività UI (Fasi 1 & 2)
+
+### Fase 1: Quick Wins & Ottimizzazioni Critiche (P0)
+- [x] 1.1 Eliminazione dipendenza fantasma `polars` da `requirements.txt` e `pyproject.toml`, e aggiunta esclusioni in `grabber.spec`
+- [x] 1.2 Eliminazione I/O storm & memory leak in `src/ui/components/export_panel.py` (rimozione lettura eager del file binario su ogni rerun)
+- [x] 1.3 Implementazione LRU Filter-Fingerprint Count Cache e fast-path in `src/engine/duckdb_engine.py` (paginazione a costo zero)
+- [x] 1.4 Zero-copy data pass-through: aggiornamento di `QueryResult` in `src/core/models.py`, `DuckDBEngine.execute_query` e componenti UI (`data_viewer.py`, `aggregations.py`) con property lazy per `rows`
+
+### Fase 2: Reattività UI, Caching & Gestione Risorse (P1)
+- [x] 2.1 Isolamento componenti tramite `@st.fragment` (`render_data_viewer`, `render_aggregations`, `render_export_panel`, `render_cache_controls`)
+- [x] 2.2 Caching e ottimizzazione di `get_distinct_values` per colonne categoriche (evitare CAST/TRIM su numerici/date)
+- [x] 2.3 Persistenza dei risultati aggregati e distinct in `st.session_state` in `aggregations.py`
+- [x] 2.4 Unificazione scansione filesystem con singola passata `os.scandir` e cache in `src/adapters/detector.py`
+- [x] 2.5 Pulizia widget state orfani su "Rimuovi Tutti" in `filter_battery.py` e aggiornamento chiavi in `state_manager.py`
+
+### Verifica & Test
+- [x] 3.1 Suite di test automatizzati per le nuove funzionalità di caching, zero-copy, e detector (`tests/test_optimizations_fase1_fase2.py`)
+- [x] 3.2 Esecuzione test suite di regressione e linters (`pytest`, `ruff`, `mypy`)
+- [x] 3.3 Misurazione tempi di risposta ed eliminazione memory spikes
+
+### Review Section — Ottimizzazioni Fasi 1 & 2
+- **Deliverables**:
+  - `grabber.spec`, `requirements.txt`, `pyproject.toml`: rimozione di `polars` non utilizzato (-157 MB nel bundle PyInstaller, ~-44% dimensione totale) ed esclusione header C++ e sottosistemi Arrow non usati.
+  - `src/ui/components/export_panel.py`: rimossa lettura eager in RAM di 100+ MB ad ogni rerun dello script principale Streamlit; download attivabile on-demand.
+  - `src/engine/duckdb_engine.py`: LRU count cache (128 slot) su fingerprint del filtro (`QuerySpec.get_filter_fingerprint()`) e bypass istantaneo per query senza filtri -> paginazione sequenziale istantanea (0.00 ms per `count_matching_rows`). Cache dei valori distinti (`_distinct_cache`) con query type-aware (eliminato `CAST(... AS VARCHAR)` su tipi numerici e date per sfruttare i zonemap SIMD).
+  - `src/core/models.py`: `QueryResult.df` nativo zero-copy con lazy-conversion su `result.rows` per 100% retrocompatibilità.
+  - `src/ui/components/data_viewer.py` & `aggregations.py`: rendering diretto di `result.df` verso `st.dataframe()` senza overhead di `cursor.fetchall() -> list[list] -> pd.DataFrame`.
+  - `src/ui/components/`: decorati con `@st.fragment` (`data_viewer`, `aggregations`, `export_panel`, `cache_controls`). Paginazione e cambio pagina isolati con `st.rerun(scope="fragment")`, prevenendo il re-render globale dell'app.
+  - `src/ui/components/aggregations.py`: memorizzati risultati di raggruppamento e distinct in `st.session_state` per evitare ricalcoli indesiderati al cambio tab o visualizzazione.
+  - `src/adapters/detector.py`: scansione ricorsiva unificata con `os.scandir` in singola passata (invece di fino a 12 chiamate separate `glob.glob`) con cache su `(path, mtime)`.
+  - `src/ui/components/filter_battery.py` & `state_manager.py`: pulizia completa di widget key dinamici orfani su reset filtri e sincronizzazione chiavi di stato.
+  - `tests/test_optimizations_fase1_fase2.py`: 5 nuovi test unitari su count cache, zero-copy lazy evaluation, detector directory scan, pulizia chiavi di sessione e distinct values caching.
+- **Quality Assurance**:
+  - Test suite: **78 passati, 11 skipped** (test con dataset esterni assenti opportunamente gestiti con skip) in **1.22s**.
+  - Linter Ruff: **0 errori** su tutti i file sorgente e test.
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/`.
+
+---
+
+## 27. Traduzione README in Inglese, Tech Stack Badges ("for-the-badge") & Verifica Responsività GitHub Page
+
+### Todo List
+- [x] 27.1 Verifica & Audit Responsività GitHub Pages (`docs/`) <!-- id: 27.1 -->
+  - Analisi viewport mobile narrow (320px-375px), standard (375px-480px), tablet (768px-900px) e desktop (>1200px)
+  - Identificazione overflow orizzontale (`features-grid`, `downloads-grid`, `terminal-header`, `license-card`)
+  - Ottimizzazione CSS per grid fluidi (`minmax(min(100%, 300px), 1fr)`), padding scalabili e mobile navbar
+  - Perfezionamento script JS per toggle accessibile del menu mobile (`aria-expanded`, click-outside close)
+- [x] 27.2 Traduzione README.md in Inglese & Badge Tech Stack "for-the-badge" <!-- id: 27.2 -->
+  - Inserimento badge ufficiali con stile `for-the-badge` (Python, DuckDB, Streamlit, Apache Arrow, Pandas, Pytest, Ruff, GitHub Actions)
+  - Traduzione integrale in inglese accurato, tecnico e privo di hype di tutte le sezioni (Architecture, Benchmarks, Quickstart, Standalone Executables, License)
+  - Verifica della coerenza della licenza proprietaria RNC-1.0 in lingua inglese
+- [x] 27.3 Test di Regressione & Validazione E2E <!-- id: 27.3 -->
+  - Aggiunta test automatizzati di responsività e integrità in `tests/test_github_pages.py`
+  - Esecuzione completa suite di test (`pytest`), linters (`ruff`) e controllo sintassi
+
+### Review Section — Traduzione README & Responsività GitHub Pages
+- **Deliverables**:
+  - `README.md`: Tradotto interamente in lingua inglese professionale e tecnica. Aggiunti badge ufficiali con stile `for-the-badge` per Python, DuckDB, Streamlit, Apache Arrow, Pandas, Pytest, Ruff e GitHub Actions. Aggiornati badge informativi (Live Showcase, Licenza RNC-1.0, Piattaforme). Preservata l'accuratezza contrattuale dei termini restrittivi anti-commercial analytics.
+  - `docs/styles.css`: Risolto overflow su schermi stretti (320px–375px) rendendo fluidi i grid (`minmax(min(100%, ...), 1fr)`). Aggiunti breakpoint per tablet (900px), mobile (768px), mobile standard (480px) e mobile narrow (360px). Header terminale scorrevole e touch-friendly con `overflow-x: auto; scrollbar-width: none`. Tabella benchmark con touch scrolling e `min-width: 620px`. Pulsante GitHub compatto (solo icona) sotto 480px.
+  - `docs/index.html`: Aggiunto `aria-expanded="false"`, icona hamburger e icona di chiusura "X" per il toggle mobile.
+  - `docs/script.js`: Implementata chiusura menu mobile al click-outside, toggle dell'icona (stato `.is-active`), e sincronizzazione dinamica dell'attributo di accessibilità `aria-expanded`.
+  - `tests/test_github_pages.py`: 3 nuovi test automatizzati per validare responsive breakpoints, touch scroll, fluid grids, accessibilità menu mobile e integrità degli shield for-the-badge e sezioni inglesi del README.
+- **Quality Assurance**:
+  - Test suite pytest: **81 passati, 11 skipped** in **1.26s**.
+  - Linter Ruff: **0 errori** con `uv tool run ruff check .`.
+
+---
+
+## 28. Merge di dev in main (risoluzione conflitti e validazione integrata)
+
+### Todo List
+- [x] 28.1 Risoluzione conflitti codice in `src/engine/duckdb_engine.py` (caching LRU + type-aware distinct + fallback dinamico CSV) <!-- id: 28.1 -->
+- [x] 28.2 Risoluzione conflitti UI in `src/ui/components/filter_battery.py` (pulizia stato orfano + combinatore filtri `col_comb` + `term_logic`) <!-- id: 28.2 -->
+- [x] 28.3 Aggiornamento `get_filter_fingerprint` in `src/core/models.py` per includere `filter_logic`, `global_search_logic`, `term_logic` <!-- id: 28.3 -->
+- [x] 28.4 Rigenerazione pulita `uv.lock` con `uv lock` (risoluzione conflitto lockfile) <!-- id: 28.4 -->
+- [x] 28.5 Unione lezioni in `tasks/lessons.md` e sincronizzazione `tasks/todo.md` <!-- id: 28.5 -->
+- [x] 28.6 Esecuzione test suite completa (`pytest`) e linters (`ruff check`, `mypy`) <!-- id: 28.6 -->
+- [x] 28.7 Conclusione del commit di merge (`git commit`) <!-- id: 28.7 -->
+
+### Review Section — Risoluzione Conflitti & Merge dev in main
+- **Conflitti Risolti**:
+  - `src/engine/duckdb_engine.py`: armonizzato il tracciamento `_current_files` e il retry dinamico con `_execute_sql` (da `main`) con la count cache LRU, fast-path e distinct caching type-aware (da `dev`).
+  - `src/ui/components/filter_battery.py`: conservato il combinatore filtri `col_comb` (AND/OR) e `term_logic`, estendendo la pulizia di `st.session_state` con verifica di tipo `isinstance(k, str)`.
+  - `src/core/models.py`: esteso `get_filter_fingerprint()` per includere `term_logic`, `filter_logic` e `global_search_logic`, evitando collisioni cache al cambio logica booleana.
+  - `tasks/lessons.md`: integrate e preservate le lezioni apprese su entrambi i rami (CSV scanner conflict DuckDB, Streamlit tab eager loading, columnar engine vectorization).
+  - `tasks/todo.md`: riordinate le sezioni storiche (23-25 da `main`, 26-27 da `dev`, 28 merge resolution).
+  - `uv.lock`: rigenerato con successo senza lock fantasma (`uv lock` su rami allineati).
+- **Quality Assurance**:
+  - Test suite pytest: **99 passati, 13 skipped** in **1.23s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
 
 

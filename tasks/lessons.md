@@ -161,4 +161,14 @@
      - In `CsvAdapter.inspect_schema` e in `DuckDBEngine._execute_sql`, intercettare l'eccezione specifica di conflitto e commutare dinamicamente a `parallel=false` solo per il dataset che genera l'errore, rieseguendo l'operazione al volo.
      - Resettare lo stato a `parallel=None` a ogni caricamento/cambio dataset in `connect_dataset` per garantire che i dataset successivi continuino a viaggiare alla massima velocità multi-core.
 
+## Streamlit Tab Eager Execution & Memory Churn
+- In Streamlit, `st.tabs` esegue il corpo di ogni tab ad ogni singolo rerun dello script principale, indipendentemente da quale tab sia attiva nel browser dell'utente.
+- Se una tab contiene operazioni di lettura file I/O (es. `open(last_export_file, "rb").read()`), computazioni pesanti o query non cachate, queste vengono rieseguite anche quando l'utente sta solo cambiando pagina nella tabella o modificando un filtro in un'altra scheda.
+- **Rule**:
+  1. Non leggere mai eager in memoria file di export o dataset nei componenti UI; preparare il buffer di download solo on-demand su azione esplicita dell'utente.
+  2. Isolare i sotto-pannelli ad alto carico interattivo con `@st.fragment`, usando `st.rerun(scope="fragment")` per limitare i rerun al componente isolato.
+
+## Columnar Engine Vectorization & Type-Aware Projections
+- Applicare trasformazioni uniformi su stringhe (es. `TRIM(CAST(col AS VARCHAR))`) su colonne numeriche, date o booleane distrugge l'accelerazione SIMD, i zonemaps min/max e i dizionari di DuckDB e Parquet, forzando una scansione e conversione completa riga per riga.
+- **Rule**: Verificare sempre `col_meta.data_type` prima di costruire predicati o proiezioni: applicare `TRIM` o funzioni testuali esclusivamente su colonne di tipo `TEXT`, preservando tipi nativi per numerici, timestamp e booleani.
 

@@ -1,26 +1,36 @@
 # Grabber - Big Data Analytical Engine & GUI
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Showcase-10b981?style=flat&logo=github)](https://vinello28.github.io/grabber/)
-[![License: RNC-1.0](https://img.shields.io/badge/License-RNC--1.0-f59e0b.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#-eseguibili-standalone-doppio-clic-con-icona--github-releases)
+![Cover](public/rdm1.png)
 
-> 🌐 **Sito Ufficiale & Showcase Interattivo**: [https://vinello28.github.io/grabber/](https://vinello28.github.io/grabber/)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Showcase-10b981?style=for-the-badge&logo=github)](https://vinello28.github.io/grabber/)
+[![License: RNC-1.0](https://img.shields.io/badge/License-RNC--1.0-f59e0b?style=for-the-badge)](LICENSE)
+[![Platforms](https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge)](#-standalone-executables-double-click-with-icon--github-releases)
 
-Applicazione ad elevate prestazioni per l'interrogazione analitica, il filtraggio e l'esportazione di dataset di grandi dimensioni anche su workstation standard.
+[![Python](https://img.shields.io/badge/Python%203.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Apache Arrow](https://img.shields.io/badge/Apache%20Arrow-E3292C?style=for-the-badge&logo=apachearrow&logoColor=white)](https://arrow.apache.org/)
+[![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)](https://pandas.pydata.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Ruff](https://img.shields.io/badge/Ruff-D7FF64?style=for-the-badge&logo=ruff&logoColor=black)](https://astral.sh/ruff)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-Cross-platform (**macOS, Windows, Linux**), con interfaccia grafica reattiva che si auto-adatta allo schema di qualunque dato fornito.
+> 🌐 **Official Website & Interactive Showcase**: [https://vinello28.github.io/grabber/](https://vinello28.github.io/grabber/)
+
+High-performance application for analytical querying, multi-field filtering, and streaming export of large-scale datasets on standard workstations.
+
+Cross-platform (**macOS, Windows, Linux**), featuring a reactive graphical interface that dynamically adapts to the schema of any provided dataset.
 
 ---
 
-## Architettura e Principi di Design
+## Architecture and Design Principles
 
-L'applicazione segue una separazione chiara dei componenti tra interfaccia utente, logica di business e connettori dati:
+The application maintains a strict separation of concerns across presentation, core business logic, and data ingestion layers:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
 │                      UI LAYER                          │
-│   Streamlit GUI (Browser cross-platform)               │
+│   Streamlit GUI (Cross-platform Browser / Native)      │
 │   - Dynamic Filter Battery   - Interactive Data Grid   │
 │   - Multi-Column Aggregator  - Streaming Exporter      │
 └──────────────────────────▲─────────────────────────────┘
@@ -37,171 +47,171 @@ L'applicazione segue una separazione chiara dei componenti tra interfaccia utent
 │   - CsvAdapter: Streaming multi-file sniffer/scanner   │
 │   - ParquetAdapter: Predicate & projection pushdown    │
 │   - XmlAdapter: Streaming lxml iterparse               │
-│   - SchemaDetector: Classificazione automatica tipi    │
+│   - SchemaDetector: Automatic type classification      │
 └────────────────────────────────────────────────────────┘
 ```
 
-### Componenti tecnologici
-1. **Esecuzione Out-of-Core**:
-   I motori in-memory tradizionali caricano l'intero dataset in RAM, rischiando blocchi per memoria esaurita (`OOM`).
-   **DuckDB** opera in modalità out-of-core: mantiene in memoria solo i blocchi necessari e scrive i dati intermedi su disco se necessario, garantendo consumi stabili.
+### Technological Components
+1. **Out-of-Core Execution**:
+   Traditional in-memory data engines load entire datasets into RAM, leading to out-of-memory (`OOM`) crashes.
+   **DuckDB** operates out-of-core: it keeps only necessary blocks in memory and spills intermediate data to disk when needed, ensuring stable memory consumption.
 2. **Streaming XML**:
-   Per i file XML, `XmlAdapter` sfrutta un parser iterativo con rimozione immediata degli elementi processati (`elem.clear()`), mantenendo costante l'occupazione di memoria.
-3. **Interfaccia Grafica**:
-   Streamlit fornisce un'interfaccia accessibile da browser locale senza dipendenze grafiche native complesse.
+   For XML files, `XmlAdapter` employs an iterative streaming parser that purges elements immediately after processing (`elem.clear()`), maintaining flat $O(1)$ memory usage.
+3. **User Interface**:
+   Streamlit delivers an accessible browser-based interface without requiring heavy native UI frameworks.
 
 ---
 
-## 🚀 Funzionalità Chiave
+## 🚀 Key Features
 
-- **Adattamento Dinamico dello Schema**: Analizza automaticamente qualsiasi file o cartella (.csv, .parquet, .xml) e classifica i campi in:
-  - 🔤 **Testo**: Operatori `Contiene`, `Non contiene`, `Inizia con`, `Finisce con`, `Uguale`, `Diverso`, `Regex`, `È vuoto/nullo`.
-  - 🔢 **Numerico**: Operatori `Intervallo (Min - Max)`, `>`, `>=`, `<`, `<=`, `=`, `È nullo`.
-  - 🏷️ **Categorico**: Selezione multipla (`In`, `Not In`), estrazione dinamica dei valori unici.
-  - 📅 **Data**: Filtri temporali.
-- **Ricerca Rapida Globale**: Ricerca istantanea su tutte le colonne testuali contemporaneamente (es. ricerca per *Codice Fiscale*, *Beneficiario*, o parole chiave).
-- **Raggruppamenti & Analisi (Group By / Distinct)**:
-  - Raggruppamento per più colonne simultanee.
-  - Metriche dinamiche: `COUNT(*)`, `COUNT DISTINCT`, `SUM`, `AVG`, `MIN`, `MAX`.
-  - Visualizzazione tabellare e grafici istantanei a barre.
-- **Esportazione in Streaming**:
-  - Esportazione dei soli record filtrati direttamente su file (`.csv`, `.parquet`, `.json`).
-  - L'operazione avviene in streaming nel motore analitico.
-  - Download diretto integrato nel browser per file fino a 150 MB.
-- **Monitor di Sistema Live**:
-  - Widget nella barra laterale con RAM del processo, RAM libera di sistema, percentuale CPU e core utilizzati.
+- **Dynamic Schema Adaptation**: Automatically scans any file or directory (`.csv`, `.parquet`, `.xml`) and categorizes fields into:
+  - 🔤 **Text**: Operators `Contains`, `Does not contain`, `Starts with`, `Ends with`, `Equals`, `Not equals`, `Regex`, `Is empty/null`.
+  - 🔢 **Numeric**: Operators `Range (Min - Max)`, `>`, `>=`, `<`, `<=`, `=`, `Is null`.
+  - 🏷️ **Categorical**: Multi-select (`In`, `Not In`), dynamic extraction of unique values.
+  - 📅 **Date**: Temporal date range filters.
+- **Global Rapid Search**: Instant search across all text columns simultaneously (e.g. search by *Tax Code*, *Recipient*, or keywords).
+- **Group By & Aggregations (Group By / Distinct)**:
+  - Grouping across multiple simultaneous columns.
+  - Dynamic metrics: `COUNT(*)`, `COUNT DISTINCT`, `SUM`, `AVG`, `MIN`, `MAX`.
+  - Tabular data view and instantaneous bar charts.
+- **Streaming Export**:
+  - Export filtered records directly to file (`.csv`, `.parquet`, `.json`).
+  - Streamed directly from the analytical engine to disk without accumulating rows in RAM.
+  - Direct in-browser download for files up to 150 MB.
+- **Live Hardware Monitor**:
+  - Sidebar widget displaying process RSS memory, system free RAM, CPU utilization percentage, and active cores.
 
 ---
 
-## 💻 Installazione e Avvio Rapido
+## 💻 Installation & Quickstart
 
-### Prerequisiti
-- **Python 3.10 o superiore** (consigliato Python 3.11 o 3.12).
+### Prerequisites
+- **Python 3.10 or higher** (Python 3.11 or 3.12 recommended).
 
-### 1. Avvio Immediato (One-Click)
+### 1. One-Click Startup
 
-- **Su macOS / Linux**:
+- **On macOS / Linux**:
   ```bash
   ./run.sh
   ```
-- **Su Windows**:
-  Doppio clic su `run.bat` oppure:
+- **On Windows**:
+  Double-click `run.bat` or execute in Command Prompt:
   ```cmd
   run.bat
   ```
 
-### 2. Installazione Manuale con Pip / Virtualenv
+### 2. Manual Installation with Pip / Virtualenv
 ```bash
-# Crea un ambiente virtuale
+# Create a virtual environment
 python3 -m venv .venv
-source .venv/bin/activate  # Su Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Installa le dipendenze
+# Install dependencies
 pip install -r requirements.txt
 
-# Avvia l'applicazione
+# Launch the application
 python run.py
 ```
 
-L'applicazione si aprirà automaticamente nel tuo browser predefinito all'indirizzo `http://localhost:8501`.
+The application automatically opens in your default web browser at `http://localhost:8501`.
 
 ---
 
-## 📦 Eseguibili Standalone (Doppio Clic con Icona) & GitHub Releases
+## 📦 Standalone Executables (Double-Click with Icon) & GitHub Releases
 
-Per gli utenti finali che **non desiderano installare Python o usare il terminale**, è possibile distribuire Grabber come applicazione eseguibile nativa autonoma:
+For end users who **prefer not to install Python or use the terminal**, Grabber is distributed as a standalone native desktop application:
 
-### 1. Download Diretto da GitHub Releases
-Grazie alla GitHub Actions CI/CD configurata in [`.github/workflows/build_releases.yml`](file:///.github/workflows/build_releases.yml), ad ogni nuova release o tag (`v1.0.0`) vengono generati automaticamente:
-- **`Grabber-Windows.zip`**: Contiene `Grabber.exe` con icona applicazione personalizzata `.ico`. L'utente decomprime e fa doppio clic su `Grabber.exe`.
-- **`Grabber-macOS.zip`**: Contiene `Grabber.app` con icona applicazione ad alta risoluzione `.icns`. L'utente trascina in Applicazioni e fa doppio clic.
-- **`Grabber-Linux.tar.gz`**: Eseguibile binario autonomo standalone per distribuzioni Linux.
+### 1. Direct Download from GitHub Releases
+Through automated GitHub Actions CI/CD ([`.github/workflows/build_releases.yml`](.github/workflows/build_releases.yml)), every release or tag (`v1.0.0`) automatically produces:
+- **`Grabber-Windows.zip`**: Contains `Grabber.exe` with a custom application icon (`.ico`). Extract and double-click `Grabber.exe`.
+- **`Grabber-macOS.zip`**: Contains `Grabber.app` with a high-resolution Retina application icon (`.icns`). Drag to Applications and double-click.
+- **`Grabber-Linux.tar.gz`**: Standalone portable binary bundle for Linux distributions.
 
-### 2. Aggiornamenti In-App Diretti da GitHub Releases
-L'applicazione include un sistema integrato di aggiornamento:
-- Nella barra laterale è presente la sezione **🔄 Aggiornamenti Software**.
-- Cliccando su **"Verifica Aggiornamenti"**, l'app interroga le API di GitHub Releases, confronta la versione semantica installata (`v1.0.0`) con l'ultima disponibile sul repository e, se presente una versione più recente:
-  - Mostra le **Note di Rilascio (Changelog)**.
-  - Fornisce il link diretto alla release su GitHub.
-  - Consente di **scaricare direttamente il pacchetto aggiornato** per il proprio sistema operativo (Windows `.zip`, macOS `.zip`, Linux `.tar.gz`) con barra di avanzamento del download.
+### 2. In-App Updates via GitHub Releases
+The application includes an integrated update client:
+- The sidebar contains a **🔄 Software Updates** section.
+- Clicking **"Check Updates"** queries the GitHub Releases API, compares the installed semantic version (`v1.0.0`) against the latest remote release, and if an update is available:
+  - Displays the **Release Notes (Changelog)**.
+  - Provides a direct link to the GitHub release.
+  - Enables **direct download of the updated package** for the current operating system (Windows `.zip`, macOS `.zip`, Linux `.tar.gz`) with a live progress bar.
 
-### 3. Compilazione Locale dell'Eseguibile
-Se desideri compilare l'eseguibile autonomamente sulla tua macchina:
+### 3. Local Binary Compilation
+To compile the standalone binary locally on your machine:
 ```bash
 python build_executable.py
 ```
-Il binario standalone con le icone incorporate verrà generato nella cartella `dist/`.
+The standalone binary with bundled icons is output to the `dist/` directory.
 
 ---
 
-## 🧪 Benchmark sui Dataset di Test Forniti
+## 🧪 Benchmarks on Test Datasets
 
-I test automatizzati (`pytest tests/`) confermano il rispetto rigoroso dei requisiti di performance e memoria:
+Automated test suites (`pytest tests/`) verify strict compliance with performance and memory bounds:
 
-| Dataset | Formato | Dimensione | Record Totali | Operazione Eseguita | Tempo Esecuzione | Picco RAM Processo |
+| Dataset | Format | Size | Total Rows | Operation Executed | Execution Time | Process RAM Peak |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `data/test1` | 12 file CSV | **13.5 GB** | **23,957,368** | Scansione e Conteggio globale | **2.81 s** | < 150 MB |
-| `data/test1` | 12 file CSV | **13.5 GB** | **23,957,368** | Filtro per Codice Fiscale + Export | **2.92 s** | < 180 MB |
-| `data/test1` | 12 file CSV | **13.5 GB** | **23,957,368** | Group By Regione + Somma Importi | **3.03 s** | < 220 MB |
-| `annihilation_test` | File XML | **1.3 GB (singolo)** | **500,000** | Streaming parsing iterativo | **4.49 s (288 MB/s)** | **28.1 MB** (Costante) |
+| `data/test1` | 12 CSV files | **13.5 GB** | **23,957,368** | Columnar Scan & Count | **2.81 s** | < 150 MB |
+| `data/test1` | 12 CSV files | **13.5 GB** | **23,957,368** | Tax Code Filter + Export | **2.92 s** | < 180 MB |
+| `data/test1` | 12 CSV files | **13.5 GB** | **23,957,368** | Group By Region + Sum | **3.03 s** | < 220 MB |
+| `annihilation_test` | XML file | **1.3 GB (single)** | **500,000** | Iterative Streaming Parse | **4.49 s (288 MB/s)** | **28.1 MB** (Constant) |
 
-### Esecuzione della Suite di Test
-Per lanciare i test automatizzati:
+### Running the Test Suite
+To run the automated tests:
 ```bash
 pytest -v
 ```
 
 ---
 
-## 📂 Struttura del Progetto
+## 📂 Project Structure
 
 ```text
 grabber/
 ├── src/
-│   ├── core/                  # Entità, Modelli di Dominio e Interfacce
+│   ├── core/                  # Domain entities, data models, and interfaces
 │   │   ├── models.py          # DataType, ColumnMeta, FilterRule, QuerySpec
 │   │   └── interfaces.py      # IDatasetAdapter, IQueryEngine
-│   ├── adapters/              # Connettori per formati dati
-│   │   ├── detector.py        # Rilevatore formato e percorsi
-│   │   ├── csv_adapter.py     # Connettore streaming CSV
-│   │   ├── parquet_adapter.py # Connettore scanner Parquet
-│   │   └── xml_adapter.py     # Parser streaming XML e convertitore parquet
-│   ├── engine/                # Motore di esecuzione DuckDB
-│   │   ├── duckdb_engine.py   # Gestione sessione DuckDB e viste streaming
-│   │   ├── query_builder.py   # Compilatore SQL parametrizzato per filtri
-│   │   └── resource_monitor.py# Monitoraggio hardware e limiti RAM
-│   └── ui/                    # Interfaccia grafica reattiva Streamlit
-│       ├── app.py             # Entrypoint principale dell'applicazione
-│       └── components/        # Componenti modulari della GUI
+│   ├── adapters/              # Connectors for data formats
+│   │   ├── detector.py        # Format and path sniffer
+│   │   ├── csv_adapter.py     # Streaming CSV connector
+│   │   ├── parquet_adapter.py # Parquet scanner connector
+│   │   └── xml_adapter.py     # Streaming XML parser and Parquet converter
+│   ├── engine/                # DuckDB analytical execution engine
+│   │   ├── duckdb_engine.py   # DuckDB session and streaming view management
+│   │   ├── query_builder.py   # Parameterized SQL query compiler
+│   │   └── resource_monitor.py# Hardware telemetry and memory capping
+│   └── ui/                    # Reactive Streamlit graphical interface
+│       ├── app.py             # Main application entrypoint
+│       └── components/        # Modular GUI components
 │           ├── system_stats.py
 │           ├── dataset_selector.py
 │           ├── filter_battery.py
 │           ├── data_viewer.py
 │           ├── aggregations.py
 │           └── export_panel.py
-├── tests/                     # Suite di test unitari e di integrazione
-├── run.py                     # Launcher universale Python
-├── run.sh                     # Script avvio rapido macOS / Linux
-├── run.bat                    # Script avvio rapido Windows
-├── requirements.txt           # Dipendenze Python
-└── pyproject.toml             # Configurazione packaging standard
+├── tests/                     # Unit and integration test suite
+├── run.py                     # Universal Python launcher
+├── run.sh                     # Quickstart script for macOS / Linux
+├── run.bat                    # Quickstart script for Windows
+├── requirements.txt           # Python runtime dependencies
+└── pyproject.toml             # Standard packaging configuration
 ```
 
 ---
 
-## 📜 Copyright e Licenza
+## 📜 Copyright and License
 
-Copyright © 2026 **Gabriele Vianello** (<vianello.tech@gmail.com>). Tutti i diritti riservati.
+Copyright © 2026 **Gabriele Vianello** (<vianello.tech@gmail.com>). All rights reserved.
 
-Questo software è distribuito sotto licenza proprietaria restrittiva **Grabber Restrictive Non-Commercial License (RNC-1.0)**. Consultare il file [LICENSE](LICENSE) per il testo contrattuale completo.
+This software is distributed under the proprietary restrictive **Grabber Restrictive Non-Commercial License (RNC-1.0)**. Refer to the [LICENSE](LICENSE) file for the full legal text.
 
-### Termini e Restrizioni:
-- **Uso Personale e Accademico**: L'esecuzione, la consultazione del codice e la compilazione sono permesse esclusivamente per fini personali, didattici, universitari e di ricerca no-profit.
-- **Divieto di Utilizzo Commerciale**: È vietata la vendita, la sub-licenza, la distribuzione a pagamento o l'erogazione dell'applicazione sotto forma di servizio cloud o SaaS.
-- **Divieto di Analisi Dati a Fini Commerciali (*Anti-Commercial Analytics*)**:
-  - È espressamente vietato utilizzare Grabber, i suoi moduli di ingestione streaming o il motore di calcolo analitico per interrogare, processare, estrarre o aggregare dataset a supporto di attività commerciali, business intelligence aziendale, consulenze a pagamento, conformità aziendale a fini di lucro o per conto di società ed enti commerciali.
-- **Opere Derivate**: Qualsiasi modifica o copia deve mantenere l'attribuzione di copyright originale e la medesima licenza restrittiva, senza possibilità di rilascio sotto licenze open-source permissive (es. MIT, Apache, BSD).
+### Terms and Restrictions:
+- **Personal and Academic Use**: Running, inspecting, and compiling the code is permitted strictly for personal, educational, university, and non-profit research purposes.
+- **Commercial Use Prohibition**: Selling, sublicensing, distributing for a fee, or deploying the software as a cloud or SaaS service is strictly prohibited.
+- **Anti-Commercial Analytics Prohibition**:
+  - Using Grabber, its streaming ingestion modules, or its analytical calculation engine to query, process, extract, or aggregate datasets in support of commercial activities, corporate business intelligence, paid consulting deliverables, for-profit corporate compliance, or on behalf of commercial companies and organizations is expressly prohibited.
+- **Derivative Works**: Any modification or copy must preserve original copyright attribution and the identical restrictive license, with no option to relicense under permissive open-source licenses (e.g. MIT, Apache, BSD).
 
-### Licenze Commerciali ed Enterprise:
-Per l'impiego all'interno di organizzazioni a scopo di lucro, l'elaborazione di dati a fini commerciali o accordi di licenza dedicati:  
+### Commercial and Enterprise Licensing:
+For commercial deployment within for-profit organizations, commercial data processing, or custom enterprise licensing:  
 ✉️ **Gabriele Vianello** — [vianello.tech@gmail.com](mailto:vianello.tech@gmail.com)

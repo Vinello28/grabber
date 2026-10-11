@@ -117,6 +117,9 @@ def render_filter_battery(
 
     with col_btn_clear:
         if st.button("🧹 Rimuovi Tutti", use_container_width=True):
+            for k in list(st.session_state.keys()):
+                if isinstance(k, str) and any(k.startswith(pfx) for pfx in ("col_sel_", "op_sel_", "val_single_", "val_min_", "val_max_", "val_multi_", "term_logic_", "del_btn_")):
+                    del st.session_state[k]
             st.session_state["filter_entries"] = []
             st.session_state["global_search_val"] = ""
             st.session_state["input_global_search"] = ""

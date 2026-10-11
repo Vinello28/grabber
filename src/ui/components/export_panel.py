@@ -19,6 +19,7 @@ from src.core.models import (
 from src.engine.duckdb_engine import DuckDBEngine
 
 
+@st.fragment
 def render_export_panel(
     schema: DatasetSchema,
     engine: DuckDBEngine,
@@ -28,6 +29,7 @@ def render_export_panel(
     filter_logic: BooleanOperator = BooleanOperator.AND,
     global_search_logic: BooleanOperator = BooleanOperator.AND,
 ):
+
     """Render export modal/section for filtered dataset."""
     st.markdown("#### 💾 Esportazione Dati Filtrati")
     st.caption("L'esportazione avviene in streaming diretto su disco.")
@@ -125,13 +127,17 @@ def render_export_panel(
             f"**Righe:** `{last_rows:,}`  \n"
             f"**Dimensione:** `{last_size_mb:.2f} MB`"
         )
-        if last_size_mb <= 150.0:
+        if last_size_mb <= 150.0 and st.checkbox(
+            f"📥 Prepara copia per il download nel browser ({last_size_mb:.1f} MB)", key="prep_browser_dl"
+        ):
             with open(last_path, "rb") as f:
                 st.download_button(
-                    label=f"📥 Scarica direttamente nel browser ({last_size_mb:.1f} MB)",
+                    label=f"⬇️ Clicca per scaricare {Path(last_path).name}",
                     data=f.read(),
                     file_name=Path(last_path).name,
                     mime="text/csv" if last_fmt == "csv" else "application/octet-stream",
                     use_container_width=True,
                     key="persistent_download_btn",
                 )
+
+

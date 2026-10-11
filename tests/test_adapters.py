@@ -1,6 +1,6 @@
-"""
-Unit tests for data adapters (CSV, Parquet, XML, Detector).
-"""
+import os
+
+import pytest
 
 from src.adapters.csv_adapter import CsvAdapter
 from src.adapters.detector import DatasetDetector
@@ -8,6 +8,8 @@ from src.adapters.xml_adapter import XmlAdapter
 
 
 def test_detector_csv():
+    if not os.path.exists("data/test1"):
+        pytest.skip("Dataset locale data/test1 non presente")
     analysis = DatasetDetector.analyze_path("data/test1")
     assert analysis["format"] == "csv"
     assert analysis["file_count"] == 12
@@ -15,22 +17,29 @@ def test_detector_csv():
 
 
 def test_detector_xml():
+    if not os.path.exists("data/annihilation_test"):
+        pytest.skip("Dataset locale data/annihilation_test non presente")
     analysis = DatasetDetector.analyze_path("data/annihilation_test")
     assert analysis["format"] == "xml"
     assert analysis["file_count"] > 10
 
 
 def test_csv_adapter_sniff_delimiter():
-    adapter = CsvAdapter()
     sample_file = "data/test1/reclassified_multiclass_aiuti_2014.csv"
+    if not os.path.exists(sample_file):
+        pytest.skip(f"File {sample_file} non presente")
+    adapter = CsvAdapter()
     delim = adapter.sniff_delimiter(sample_file)
     assert delim == ","
 
 
 def test_xml_adapter_record_detection():
-    adapter = XmlAdapter()
     sample_file = "data/annihilation_test/2014_2015/OpenData_Aiuti_2014_01.xml"
+    if not os.path.exists(sample_file):
+        pytest.skip(f"File {sample_file} non presente")
+    adapter = XmlAdapter()
     tag = adapter.detect_record_tag(sample_file)
+
     assert tag == "AIUTO"
 
     # Test reading a few streaming records
