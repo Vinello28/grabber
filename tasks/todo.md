@@ -488,3 +488,33 @@
   - Linter Ruff: **0 errori** su tutti i file sorgente e test.
   - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/`.
 
+---
+
+## 24. Traduzione README in Inglese, Tech Stack Badges ("for-the-badge") & Verifica Responsività GitHub Page
+
+### Todo List
+- [x] 24.1 Verifica & Audit Responsività GitHub Pages (`docs/`) <!-- id: 24.1 -->
+  - Analisi viewport mobile narrow (320px-375px), standard (375px-480px), tablet (768px-900px) e desktop (>1200px)
+  - Identificazione overflow orizzontale (`features-grid`, `downloads-grid`, `terminal-header`, `license-card`)
+  - Ottimizzazione CSS per grid fluidi (`minmax(min(100%, 300px), 1fr)`), padding scalabili e mobile navbar
+  - Perfezionamento script JS per toggle accessibile del menu mobile (`aria-expanded`, click-outside close)
+- [x] 24.2 Traduzione README.md in Inglese & Badge Tech Stack "for-the-badge" <!-- id: 24.2 -->
+  - Inserimento badge ufficiali con stile `for-the-badge` (Python, DuckDB, Streamlit, Apache Arrow, Pandas, Pytest, Ruff, GitHub Actions)
+  - Traduzione integrale in inglese accurato, tecnico e privo di hype di tutte le sezioni (Architecture, Benchmarks, Quickstart, Standalone Executables, License)
+  - Verifica della coerenza della licenza proprietaria RNC-1.0 in lingua inglese
+- [x] 24.3 Test di Regressione & Validazione E2E <!-- id: 24.3 -->
+  - Aggiunta test automatizzati di responsività e integrità in `tests/test_github_pages.py`
+  - Esecuzione completa suite di test (`pytest`), linters (`ruff`) e controllo sintassi
+
+### Review Section — Traduzione README & Responsività GitHub Pages
+- **Deliverables**:
+  - `README.md`: Tradotto interamente in lingua inglese professionale e tecnica. Aggiunti badge ufficiali con stile `for-the-badge` per Python, DuckDB, Streamlit, Apache Arrow, Pandas, Pytest, Ruff e GitHub Actions. Aggiornati badge informativi (Live Showcase, Licenza RNC-1.0, Piattaforme). Preservata l'accuratezza contrattuale dei termini restrittivi anti-commercial analytics.
+  - `docs/styles.css`: Risolto overflow su schermi stretti (320px–375px) rendendo fluidi i grid (`minmax(min(100%, ...), 1fr)`). Aggiunti breakpoint per tablet (900px), mobile (768px), mobile standard (480px) e mobile narrow (360px). Header terminale scorrevole e touch-friendly con `overflow-x: auto; scrollbar-width: none`. Tabella benchmark con touch scrolling e `min-width: 620px`. Pulsante GitHub compatto (solo icona) sotto 480px.
+  - `docs/index.html`: Aggiunto `aria-expanded="false"`, icona hamburger e icona di chiusura "X" per il toggle mobile.
+  - `docs/script.js`: Implementata chiusura menu mobile al click-outside, toggle dell'icona (stato `.is-active`), e sincronizzazione dinamica dell'attributo di accessibilità `aria-expanded`.
+  - `tests/test_github_pages.py`: 3 nuovi test automatizzati per validare responsive breakpoints, touch scroll, fluid grids, accessibilità menu mobile e integrità degli shield for-the-badge e sezioni inglesi del README.
+- **Quality Assurance**:
+  - Test suite pytest: **81 passati, 11 skipped** in **1.26s**.
+  - Linter Ruff: **0 errori** con `uv tool run ruff check .`.
+
+

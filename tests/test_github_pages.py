@@ -96,3 +96,72 @@ def test_github_actions_workflow():
     assert "actions/deploy-pages" in content
     assert "upload-pages-artifact" in content
     assert "path: 'docs'" in content
+
+
+def test_css_responsive_design_and_breakpoints():
+    """Verify that styles.css defines robust responsive breakpoints, fluid grids, and touch scroll."""
+    css = STYLES_CSS.read_text(encoding="utf-8")
+
+    # Responsive Breakpoints
+    assert "@media (max-width: 900px)" in css
+    assert "@media (max-width: 768px)" in css
+    assert "@media (max-width: 480px)" in css
+    assert "@media (max-width: 360px)" in css
+
+    # Fluid grids that never overflow 320px/360px viewports
+    assert "minmax(min(100%, 300px), 1fr)" in css
+    assert "minmax(min(100%, 280px), 1fr)" in css
+    assert "minmax(min(100%, 220px), 1fr)" in css
+
+    # Benchmark table touch scroll and min-width
+    assert "-webkit-overflow-scrolling: touch" in css
+    assert "min-width: 620px" in css
+
+    # Terminal tabs touch scroll
+    assert "overflow-x: auto" in css
+    assert "scrollbar-width: none" in css
+
+    # Nav toggle active state
+    assert ".nav-toggle-btn.is-active" in css
+
+
+def test_mobile_navigation_accessibility_and_ux():
+    """Verify accessible markup and click-outside dismissal in script.js and index.html."""
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = SCRIPT_JS.read_text(encoding="utf-8")
+
+    # Accessibility attributes on toggle button
+    assert 'aria-expanded="false"' in html
+    assert "icon-hamburger" in html
+    assert "icon-close" in html
+
+    # JS click-outside and aria-expanded toggle
+    assert "closeMobileMenu" in js
+    assert "aria-expanded" in js
+    assert "mobile-open" in js
+
+
+def test_readme_english_and_for_the_badge_shields():
+    """Verify that README.md is in English and features 'for-the-badge' tech stack shields."""
+    readme_path = DOCS_DIR.parent / "README.md"
+    assert readme_path.is_file(), "README.md must exist in repo root"
+    content = readme_path.read_text(encoding="utf-8")
+
+    # Tech stack shields with style=for-the-badge
+    for tech in ["Python", "DuckDB", "Streamlit", "Apache%20Arrow", "Pandas", "Pytest", "Ruff", "GitHub%20Actions"]:
+        assert tech in content, f"Tech shield for '{tech}' missing in README.md"
+    assert "style=for-the-badge" in content
+
+    # English headings
+    assert "## Architecture and Design Principles" in content
+    assert "## 🚀 Key Features" in content
+    assert "## 💻 Installation & Quickstart" in content
+    assert "## 📦 Standalone Executables (Double-Click with Icon) & GitHub Releases" in content
+    assert "## 🧪 Benchmarks on Test Datasets" in content
+    assert "## 📂 Project Structure" in content
+    assert "## 📜 Copyright and License" in content
+
+    # English legal terms
+    assert "Anti-Commercial Analytics Prohibition" in content
+    assert "Personal and Academic Use" in content
+

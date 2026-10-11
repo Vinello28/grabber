@@ -290,6 +290,18 @@ img {
   padding: 0.5rem;
 }
 
+.nav-toggle-btn .icon-close {
+  display: none;
+}
+
+.nav-toggle-btn.is-active .icon-hamburger {
+  display: none;
+}
+
+.nav-toggle-btn.is-active .icon-close {
+  display: block;
+}
+
 /* ==========================================================================
    Buttons & Pills
    ========================================================================== */
@@ -445,11 +457,13 @@ img {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
+  gap: 0.75rem;
 }
 
 .terminal-dots {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .dot {
@@ -464,6 +478,13 @@ img {
 .terminal-tabs {
   display: flex;
   gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .terminal-tab {
@@ -475,6 +496,8 @@ img {
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--transition-fast);
 }
 
@@ -554,7 +577,7 @@ img {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 1.5rem;
 }
 
@@ -661,7 +684,7 @@ img {
    ========================================================================== */
 .features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 1.75rem;
 }
 
@@ -890,6 +913,7 @@ img {
 /* Benchmark Results Table */
 .benchmark-table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -897,6 +921,7 @@ img {
 
 .benchmark-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: 0.92rem;
   text-align: left;
@@ -976,7 +1001,7 @@ img {
 
 .arch-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -1001,7 +1026,7 @@ img {
    ========================================================================== */
 .downloads-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 1.75rem;
   margin-bottom: 2.5rem;
 }
@@ -1241,6 +1266,10 @@ img {
     grid-template-columns: 1fr 1fr;
     gap: 2rem;
   }
+  .nav-links {
+    gap: 1.1rem;
+    font-size: 0.88rem;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1252,9 +1281,11 @@ img {
     right: 0;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-lg);
     flex-direction: column;
     padding: 1.5rem;
     gap: 1rem;
+    z-index: 101;
   }
 
   .nav-links.mobile-open {
@@ -1262,18 +1293,169 @@ img {
   }
 
   .nav-toggle-btn {
-    display: block;
-  }
-
-  .footer-top {
-    grid-template-columns: 1fr;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .hero-section {
-    padding: 3rem 0 2rem;
+    padding: 3.5rem 0 2rem;
+  }
+
+  .hero-title {
+    font-size: clamp(1.85rem, 6vw, 3rem);
+  }
+
+  .hero-subtitle {
+    font-size: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .hero-pill {
+    font-size: 0.78rem;
+    padding: 0.3rem 0.8rem;
   }
 
   .simulator-box {
     padding: 1.5rem;
+  }
+
+  .license-card {
+    padding: 2rem 1.5rem;
+  }
+
+  .auto-update-box {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem;
+    gap: 1rem;
+  }
+
+  .update-content h4 {
+    font-size: 1rem;
+  }
+
+  .update-content p {
+    font-size: 0.85rem;
+  }
+
+  .enterprise-cta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .footer-top {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 1rem;
+  }
+
+  .brand {
+    font-size: 1.15rem;
+    gap: 0.55rem;
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand-badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+  }
+
+  .nav-actions {
+    gap: 0.5rem;
+  }
+
+  .github-btn {
+    padding: 0.45rem 0.65rem;
+  }
+
+  .github-btn span {
+    display: none;
+  }
+
+  .theme-toggle-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .hero-cta-group {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .hero-cta-group .btn {
+    width: 100%;
+  }
+
+  .terminal-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .terminal-dots {
+    display: none;
+  }
+
+  .terminal-tabs {
+    width: 100%;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .downloads-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .download-card {
+    padding: 1.75rem 1.25rem;
+  }
+
+  .arch-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .arch-layer {
+    padding: 1.25rem 1rem;
+  }
+
+  .size-pill-btn {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.82rem;
+  }
+
+  .license-card {
+    padding: 1.5rem 1rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .brand-badge {
+    display: none;
   }
 }
