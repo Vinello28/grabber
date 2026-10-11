@@ -30,7 +30,19 @@ DATASET_DEPENDENT_KEYS = [
     "last_export_path",
     "last_export_size_mb",
     "last_export_rows",
+    "last_export_fmt",
+    "_prev_export_fmt",
+    "page_size_select",
+    "agg_limit_input",
+    "agg_chk_count",
+    "persistent_download_btn",
+    "prep_browser_dl",
+    "last_agg_df",
+    "last_agg_cols",
+    "last_agg_time",
+    "last_distinct_df",
 ]
+
 
 # Prefixes for dynamically generated filter row widget keys
 DYNAMIC_WIDGET_PREFIXES = (

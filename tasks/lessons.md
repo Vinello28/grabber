@@ -150,3 +150,15 @@
 ## Streamlit fragments con `run_every`
 - Il timer di `st.fragment(run_every=N)` gira nel frontend (il server manda un `auto_rerun` con intervallo e `fragment_id`): un client WebSocket grezzo non vede aggiornamenti se non emula quel messaggio.
 - **Rule**: dentro un frammento scrivere con `st.*` nel container in cui viene chiamato (`with st.sidebar:`), non con `st.sidebar.*`: il rerun sostituisce il contenuto del frammento ma accoda gli elementi scritti su container esterni.
+
+## Streamlit Tab Eager Execution & Memory Churn
+- In Streamlit, `st.tabs` esegue il corpo di ogni tab ad ogni singolo rerun dello script principale, indipendentemente da quale tab sia attiva nel browser dell'utente.
+- Se una tab contiene operazioni di lettura file I/O (es. `open(last_export_file, "rb").read()`), computazioni pesanti o query non cachate, queste vengono rieseguite anche quando l'utente sta solo cambiando pagina nella tabella o modificando un filtro in un'altra scheda.
+- **Rule**:
+  1. Non leggere mai eager in memoria file di export o dataset nei componenti UI; preparare il buffer di download solo on-demand su azione esplicita dell'utente.
+  2. Isolare i sotto-pannelli ad alto carico interattivo con `@st.fragment`, usando `st.rerun(scope="fragment")` per limitare i rerun al componente isolato.
+
+## Columnar Engine Vectorization & Type-Aware Projections
+- Applicare trasformazioni uniformi su stringhe (es. `TRIM(CAST(col AS VARCHAR))`) su colonne numeriche, date o booleane distrugge l'accelerazione SIMD, i zonemaps min/max e i dizionari di DuckDB e Parquet, forzando una scansione e conversione completa riga per riga.
+- **Rule**: Verificare sempre `col_meta.data_type` prima di costruire predicati o proiezioni: applicare `TRIM` o funzioni testuali esclusivamente su colonne di tipo `TEXT`, preservando tipi nativi per numerici, timestamp e booleani.
+

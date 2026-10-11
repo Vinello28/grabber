@@ -130,11 +130,76 @@ class QuerySpec:
     limit: int | None = None
     offset: int | None = None
 
+    @property
+    def has_filters_or_grouping(self) -> bool:
+        """Return True if this query specifies any WHERE filters or GROUP BY/aggregations."""
+        return bool(
+            self.filters
+            or (self.global_search and self.global_search.strip())
+            or self.group_by_columns
+            or self.aggregations
+        )
+
+    def get_filter_fingerprint(self) -> str:
+        """Deterministic fingerprint representing filter and aggregation constraints.
+
+        Excludes offset, limit, order_by, and selected_columns since they do not affect total row count.
+        """
+        f_repr = tuple(
+            (
+                f.column,
+                getattr(f.operator, "value", str(f.operator)),
+                str(f.value),
+                str(f.value_to),
+                f.case_sensitive,
+            )
+            for f in self.filters
+        )
+        grp_repr = tuple(self.group_by_columns or [])
+        agg_repr = tuple(
+            (a.column, getattr(a.func, "value", str(a.func)), a.alias)
+            for a in (self.aggregations or [])
+        )
+        gs_cols = tuple(self.global_search_columns or [])
+        return f"{f_repr}|{self.global_search}|{gs_cols}|{grp_repr}|{agg_repr}"
+
 
 @dataclass
 class QueryResult:
     columns: list[str]
-    rows: list[list[Any]]
     total_matching_rows: int
     execution_time_seconds: float
     is_aggregated: bool = False
+    df: Any = None
+    _rows: list[list[Any]] | None = None
+
+    def __init__(
+        self,
+        columns: list[str],
+        rows: list[list[Any]] | None = None,
+        total_matching_rows: int = 0,
+        execution_time_seconds: float = 0.0,
+        is_aggregated: bool = False,
+        df: Any = None,
+    ) -> None:
+        self.columns = columns
+        self.total_matching_rows = total_matching_rows
+        self.execution_time_seconds = execution_time_seconds
+        self.is_aggregated = is_aggregated
+        self.df = df
+        self._rows = rows
+
+    @property
+    def rows(self) -> list[list[Any]]:
+        """Lazy accessor for row lists to maintain full backward compatibility."""
+        if self._rows is None:
+            if self.df is not None:
+                self._rows = self.df.values.tolist()
+            else:
+                self._rows = []
+        return self._rows
+
+    @rows.setter
+    def rows(self, val: list[list[Any]]) -> None:
+        self._rows = val
+

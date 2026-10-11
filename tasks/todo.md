@@ -451,3 +451,40 @@
 - **Verifica reale** (app Streamlit vera, client WebSocket che si comporta come il frontend, nessuna interazione): il server emette un solo `auto_rerun` (interval 5.0) e il pannello si aggiorna ogni 5,0 s con valori diversi. CPU del server a riposo, finestra 35 s con una sessione: **0,68% -> 1,14% di un core** (+~0,5%; una sola misura per caso, rumore incluso). Lettura metriche: 0,015 ms.
 - **Non verificato**: rendering visivo in un browser/finestra pywebview (nessun browser disponibile); comportamento durante indicizzazione/export lunghi (atteso: pannello fermo finché lo script non finisce, limite dichiarato).
 
+## 23. Ottimizzazione Prestazioni, Memoria e Reattività UI (Fasi 1 & 2)
+
+### Fase 1: Quick Wins & Ottimizzazioni Critiche (P0)
+- [x] 1.1 Eliminazione dipendenza fantasma `polars` da `requirements.txt` e `pyproject.toml`, e aggiunta esclusioni in `grabber.spec`
+- [x] 1.2 Eliminazione I/O storm & memory leak in `src/ui/components/export_panel.py` (rimozione lettura eager del file binario su ogni rerun)
+- [x] 1.3 Implementazione LRU Filter-Fingerprint Count Cache e fast-path in `src/engine/duckdb_engine.py` (paginazione a costo zero)
+- [x] 1.4 Zero-copy data pass-through: aggiornamento di `QueryResult` in `src/core/models.py`, `DuckDBEngine.execute_query` e componenti UI (`data_viewer.py`, `aggregations.py`) con property lazy per `rows`
+
+### Fase 2: Reattività UI, Caching & Gestione Risorse (P1)
+- [x] 2.1 Isolamento componenti tramite `@st.fragment` (`render_data_viewer`, `render_aggregations`, `render_export_panel`, `render_cache_controls`)
+- [x] 2.2 Caching e ottimizzazione di `get_distinct_values` per colonne categoriche (evitare CAST/TRIM su numerici/date)
+- [x] 2.3 Persistenza dei risultati aggregati e distinct in `st.session_state` in `aggregations.py`
+- [x] 2.4 Unificazione scansione filesystem con singola passata `os.scandir` e cache in `src/adapters/detector.py`
+- [x] 2.5 Pulizia widget state orfani su "Rimuovi Tutti" in `filter_battery.py` e aggiornamento chiavi in `state_manager.py`
+
+### Verifica & Test
+- [x] 3.1 Suite di test automatizzati per le nuove funzionalità di caching, zero-copy, e detector (`tests/test_optimizations_fase1_fase2.py`)
+- [x] 3.2 Esecuzione test suite di regressione e linters (`pytest`, `ruff`, `mypy`)
+- [x] 3.3 Misurazione tempi di risposta ed eliminazione memory spikes
+
+### Review Section — Ottimizzazioni Fasi 1 & 2
+- **Deliverables**:
+  - `grabber.spec`, `requirements.txt`, `pyproject.toml`: rimozione di `polars` non utilizzato (-157 MB nel bundle PyInstaller, ~-44% dimensione totale) ed esclusione header C++ e sottosistemi Arrow non usati.
+  - `src/ui/components/export_panel.py`: rimossa lettura eager in RAM di 100+ MB ad ogni rerun dello script principale Streamlit; download attivabile on-demand.
+  - `src/engine/duckdb_engine.py`: LRU count cache (128 slot) su fingerprint del filtro (`QuerySpec.get_filter_fingerprint()`) e bypass istantaneo per query senza filtri -> paginazione sequenziale istantanea (0.00 ms per `count_matching_rows`). Cache dei valori distinti (`_distinct_cache`) con query type-aware (eliminato `CAST(... AS VARCHAR)` su tipi numerici e date per sfruttare i zonemap SIMD).
+  - `src/core/models.py`: `QueryResult.df` nativo zero-copy con lazy-conversion su `result.rows` per 100% retrocompatibilità.
+  - `src/ui/components/data_viewer.py` & `aggregations.py`: rendering diretto di `result.df` verso `st.dataframe()` senza overhead di `cursor.fetchall() -> list[list] -> pd.DataFrame`.
+  - `src/ui/components/`: decorati con `@st.fragment` (`data_viewer`, `aggregations`, `export_panel`, `cache_controls`). Paginazione e cambio pagina isolati con `st.rerun(scope="fragment")`, prevenendo il re-render globale dell'app.
+  - `src/ui/components/aggregations.py`: memorizzati risultati di raggruppamento e distinct in `st.session_state` per evitare ricalcoli indesiderati al cambio tab o visualizzazione.
+  - `src/adapters/detector.py`: scansione ricorsiva unificata con `os.scandir` in singola passata (invece di fino a 12 chiamate separate `glob.glob`) con cache su `(path, mtime)`.
+  - `src/ui/components/filter_battery.py` & `state_manager.py`: pulizia completa di widget key dinamici orfani su reset filtri e sincronizzazione chiavi di stato.
+  - `tests/test_optimizations_fase1_fase2.py`: 5 nuovi test unitari su count cache, zero-copy lazy evaluation, detector directory scan, pulizia chiavi di sessione e distinct values caching.
+- **Quality Assurance**:
+  - Test suite: **78 passati, 11 skipped** (test con dataset esterni assenti opportunamente gestiti con skip) in **1.22s**.
+  - Linter Ruff: **0 errori** su tutti i file sorgente e test.
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/`.
+

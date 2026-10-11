@@ -1,5 +1,7 @@
 # Grabber - Big Data Analytical Engine & GUI
 
+![Copertina](public/rdm1.png)
+
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Showcase-10b981?style=flat&logo=github)](https://vinello28.github.io/grabber/)
 [![License: RNC-1.0](https://img.shields.io/badge/License-RNC--1.0-f59e0b.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)

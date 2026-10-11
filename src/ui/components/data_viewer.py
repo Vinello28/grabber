@@ -12,6 +12,7 @@ from src.core.models import DatasetSchema, FilterRule, QuerySpec
 from src.engine.duckdb_engine import DuckDBEngine
 
 
+@st.fragment
 def render_data_viewer(
     schema: DatasetSchema,
     engine: DuckDBEngine,
@@ -19,6 +20,7 @@ def render_data_viewer(
     global_search: str | None,
     global_search_cols: list[str] | None,
 ):
+
     """Render interactive data preview table with pagination and sorting."""
     st.markdown("#### 📋 Anteprima Dati")
 
@@ -142,8 +144,10 @@ def render_data_viewer(
         f"**Pagina:** `{current_page} di {total_pages}`"
     )
 
-    # Render DataFrame
-    if result.rows:
+    # Render DataFrame (zero-copy if df available)
+    if result.df is not None and not result.df.empty:
+        st.dataframe(result.df, use_container_width=True, height=450)
+    elif result.rows:
         df = pd.DataFrame(result.rows, columns=result.columns)
         st.dataframe(df, use_container_width=True, height=450)
     else:
@@ -160,14 +164,14 @@ def render_data_viewer(
             new_p = max(1, current_page - 1)
             st.session_state["current_page"] = new_p
             st.session_state["page_num_input"] = new_p
-            st.rerun()
+            st.rerun(scope="fragment")
 
     with nav_c2:
         if st.button("Successiva ➡️", disabled=(current_page >= total_pages), use_container_width=True):
             new_p = min(total_pages, current_page + 1)
             st.session_state["current_page"] = new_p
             st.session_state["page_num_input"] = new_p
-            st.rerun()
+            st.rerun(scope="fragment")
 
     with nav_c3:
         page_input = st.number_input(
@@ -180,4 +184,5 @@ def render_data_viewer(
         )
         if page_input != current_page:
             st.session_state["current_page"] = page_input
-            st.rerun()
+            st.rerun(scope="fragment")
+

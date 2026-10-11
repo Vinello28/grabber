@@ -5,16 +5,19 @@ Benchmark and memory verification test on annihilation_test XML dataset.
 import os
 
 import psutil
+import pytest
 
 from src.adapters.xml_adapter import XmlAdapter
 
 
 def test_xml_annihilation_streaming_memory():
-    process = psutil.Process(os.getpid())
     sample_xml = "data/annihilation_test/2020/OpenData_Aiuti_2020_01.xml"
-
+    if not os.path.exists(sample_xml):
+        pytest.skip(f"File {sample_xml} non presente")
+    process = psutil.Process(os.getpid())
     adapter = XmlAdapter()
     tag = adapter.detect_record_tag(sample_xml)
+
     assert tag == "AIUTO"
 
     # Stream parse 10,000 records and check RSS memory

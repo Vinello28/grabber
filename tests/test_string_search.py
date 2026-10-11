@@ -154,11 +154,15 @@ def test_duckdb_engine_drops_stale_view_on_unindexed_xml(tmp_path):
     sample_xml.write_text("<DATA><RECORD><ID>1</ID><TXT>test</TXT></RECORD></DATA>", encoding="utf-8")
 
     engine = DuckDBEngine()
-    # First connect test1 (CSV)
-    schema_csv = engine.connect_dataset("data/test1")
+    # First connect CSV
+    csv_dir = tmp_path / "csv_ds"
+    csv_dir.mkdir()
+    (csv_dir / "test.csv").write_text("ID,NAME\n1,Alice\n", encoding="utf-8")
+    schema_csv = engine.connect_dataset(str(csv_dir))
     assert schema_csv.file_count > 0
     assert engine.has_active_view()
     assert engine.current_sql_source is not None
+
 
     # Now connect unindexed XML
     schema_xml = engine.connect_dataset(str(unindexed_dir))

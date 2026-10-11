@@ -6,6 +6,7 @@ with real datasets, streaming queries, and memory boundaries.
 import os
 
 import psutil
+import pytest
 
 from src.core.models import (
     AggregationFunc,
@@ -18,11 +19,14 @@ from src.engine.duckdb_engine import DuckDBEngine
 
 
 def test_e2e_csv_test1_queries_and_export():
+    if not os.path.exists("data/test1"):
+        pytest.skip("Dataset locale data/test1 non presente")
     process = psutil.Process(os.getpid())
     initial_rss = process.memory_info().rss / (1024 * 1024)
 
     engine = DuckDBEngine(memory_limit="2GB")
     schema = engine.connect_dataset("data/test1")
+
 
     assert schema.source_format == "csv"
     assert len(schema.columns) == 27
@@ -74,8 +78,11 @@ def test_e2e_csv_test1_queries_and_export():
 
 def test_engine_view_lifecycle_recovery():
     """Verify that if the view is lost or dropped, ensure_view_exists recreates it seamlessly."""
+    if not os.path.exists("data/test1"):
+        pytest.skip("Dataset locale data/test1 non presente")
     engine = DuckDBEngine(memory_limit="2GB")
     engine.connect_dataset("data/test1")
+
     assert engine.has_active_view() is True
 
     # Intentionally drop the view to simulate session/cache desync

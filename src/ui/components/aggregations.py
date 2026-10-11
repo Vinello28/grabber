@@ -18,6 +18,7 @@ from src.core.models import (
 from src.engine.duckdb_engine import DuckDBEngine
 
 
+@st.fragment
 def render_aggregations(
     schema: DatasetSchema,
     engine: DuckDBEngine,
@@ -115,18 +116,13 @@ def render_aggregations(
                 with st.spinner("Calcolo aggregazioni out-of-core in corso..."):
                     try:
                         res = engine.execute_query(spec)
-                        st.success(f"Calcolo completato in {res.execution_time_seconds:.3f} secondi!")
-
-                        if res.rows:
-                            df_agg = pd.DataFrame(res.rows, columns=res.columns)
-                            st.dataframe(df_agg, use_container_width=True)
-
-                            # Visual chart if 1 group column and at least 1 numeric metric
-                            if len(group_cols) == 1 and len(res.columns) > 1:
-                                primary_metric = res.columns[1]
-                                chart_df = df_agg.set_index(df_agg.columns[0])[[primary_metric]].head(20)
-                                st.bar_chart(chart_df)
+                        if (res.df is not None and not res.df.empty) or res.rows:
+                            df_agg = res.df if res.df is not None else pd.DataFrame(res.rows, columns=res.columns)
+                            st.session_state["last_agg_df"] = df_agg
+                            st.session_state["last_agg_cols"] = group_cols
+                            st.session_state["last_agg_time"] = res.execution_time_seconds
                         else:
+                            st.session_state["last_agg_df"] = None
                             st.info("Nessun dato per i parametri specificati.")
                     except Exception as e:
                         if schema.source_format == "xml" and engine.current_sql_source is None:
@@ -136,6 +132,19 @@ def render_aggregations(
                             )
                         else:
                             st.error(f"Errore durante l'aggregazione: {e}")
+
+        # Render persistent aggregation result if available
+        last_agg = st.session_state.get("last_agg_df")
+        if last_agg is not None and not last_agg.empty:
+            exec_time = st.session_state.get("last_agg_time", 0.0)
+            st.success(f"Calcolo completato in {exec_time:.3f} secondi!")
+            st.dataframe(last_agg, use_container_width=True)
+
+            last_cols = st.session_state.get("last_agg_cols", [])
+            if len(last_cols) == 1 and len(last_agg.columns) > 1:
+                primary_metric = last_agg.columns[1]
+                chart_df = last_agg.set_index(last_agg.columns[0])[[primary_metric]].head(20)
+                st.bar_chart(chart_df)
 
     # 2. DISTINCT TAB
     with tab_distinct:
@@ -163,10 +172,17 @@ def render_aggregations(
                     )
                 try:
                     res = engine.execute_query(spec)
-                    if res.rows:
-                        df_dist = pd.DataFrame(res.rows, columns=[sel_dist_col, "Frequenza"])
-                        st.dataframe(df_dist, use_container_width=True)
+                    if (res.df is not None and not res.df.empty) or res.rows:
+                        df_dist = res.df if res.df is not None else pd.DataFrame(res.rows, columns=[sel_dist_col, "Frequenza"])
+                        st.session_state["last_distinct_df"] = df_dist
                     else:
+                        st.session_state["last_distinct_df"] = None
                         st.info("Nessun valore trovato.")
                 except Exception as e:
                     st.error(f"Errore: {e}")
+
+        # Render persistent distinct result if available
+        last_dist = st.session_state.get("last_distinct_df")
+        if last_dist is not None and not last_dist.empty:
+            st.dataframe(last_dist, use_container_width=True)
+

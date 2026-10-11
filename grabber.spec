@@ -61,13 +61,17 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
-    excludes=['matplotlib', 'scipy', 'torch', 'tensorflow'],
+    excludes=['polars', '_polars_runtime_32', 'matplotlib', 'scipy', 'torch', 'tensorflow', 'pytest', '_pytest', 'IPython', 'ipykernel', 'jupyter'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Strip unused pyarrow RPC/substrait binaries and C++ header files to save ~30MB
+a.binaries = [b for b in a.binaries if 'flight' not in b[0].lower() and 'substrait' not in b[0].lower()]
+a.datas = [d for d in a.datas if not d[0].endswith('.h') and '/tests/' not in d[0]]
+
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

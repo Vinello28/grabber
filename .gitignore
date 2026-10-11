@@ -11,6 +11,9 @@ dist/
 *.parquet.tmp
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
+*.egg
+.eggs/
 
 # IDEs ad OS
 .DS_Store

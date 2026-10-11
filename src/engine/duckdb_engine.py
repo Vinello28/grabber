@@ -64,6 +64,10 @@ class DuckDBEngine(IQueryEngine):
         self.current_dataset_path: str | None = None
         self.current_sql_source: str | None = None
 
+        # Caches for query execution and metadata
+        self._count_cache: dict[str, int] = {}
+        self._distinct_cache: dict[tuple[str, str, int], list[Any]] = {}
+
         # Adapters
         self.csv_adapter = CsvAdapter()
         self.parquet_adapter = ParquetAdapter()
@@ -76,6 +80,8 @@ class DuckDBEngine(IQueryEngine):
         safe_temp_dir = str(self.temp_dir).replace("'", "''")
         self.conn.execute(f"PRAGMA temp_directory='{safe_temp_dir}'")
         self.conn.execute("PRAGMA preserve_insertion_order=false")
+        self.conn.execute("PRAGMA enable_object_cache=true")
+
 
     def has_active_view(self) -> bool:
         """Check if current_dataset table/view exists in DuckDB catalog."""
@@ -129,6 +135,8 @@ class DuckDBEngine(IQueryEngine):
         fmt = analysis["format"]
         files = analysis["files"]
         self.current_dataset_path = path
+        self._count_cache.clear()
+        self._distinct_cache.clear()
 
         if fmt == "csv":
             self.current_schema = self.csv_adapter.inspect_schema(files, self.conn)
@@ -238,24 +246,32 @@ class DuckDBEngine(IQueryEngine):
 
         df = cursor.fetchdf()
         columns = df.columns.tolist()
-        rows = df.values.tolist()
 
         is_agg = bool(spec.group_by_columns or spec.aggregations)
-        total_rows = len(rows) if spec.limit is None else self.count_matching_rows(spec)
+        total_rows = len(df) if spec.limit is None else self.count_matching_rows(spec)
 
         return QueryResult(
             columns=columns,
-            rows=rows,
             total_matching_rows=total_rows,
             execution_time_seconds=round(elapsed, 3),
             is_aggregated=is_agg,
+            df=df,
         )
 
     def count_matching_rows(self, spec: QuerySpec) -> int:
-        """Count total matching rows efficiently without fetching all data."""
+        """Count total matching rows efficiently with fast-path and LRU caching."""
         self.ensure_view_exists()
         if not self.current_schema:
             return 0
+
+        # Fast path for unfiltered datasets
+        if not spec.has_filters_or_grouping and self.current_schema.row_count_estimate is not None:
+            return self.current_schema.row_count_estimate
+
+        # Check LRU filter-fingerprint count cache
+        cache_key = f"{self.current_dataset_path}:{spec.get_filter_fingerprint()}"
+        if cache_key in self._count_cache:
+            return self._count_cache[cache_key]
 
         sql = QueryBuilder.build_count_query(
             self.current_view_name,
@@ -263,25 +279,47 @@ class DuckDBEngine(IQueryEngine):
             self.current_schema.columns,
         )
         res = self.conn.execute(sql).fetchone()
-        return res[0] if res else 0
+        count = int(res[0]) if res and res[0] is not None else 0
+
+        if len(self._count_cache) >= 100:
+            keys_to_remove = list(self._count_cache.keys())[:50]
+            for k in keys_to_remove:
+                self._count_cache.pop(k, None)
+        self._count_cache[cache_key] = count
+        return count
 
     def get_distinct_values(self, column: str, limit: int = 100) -> list[Any]:
-        """Fetch distinct non-null values for a column."""
+        """Fetch distinct non-null values for a column with caching and type awareness."""
         self.ensure_view_exists()
         if not self.current_schema:
             return []
 
+        cache_key = (str(self.current_dataset_path), column, limit)
+        if cache_key in self._distinct_cache:
+            return self._distinct_cache[cache_key]
+
         col_sql = QueryBuilder.quote_ident(column)
+        meta = self.current_schema.get_column(column)
+        is_text = meta is None or meta.data_type == DataType.TEXT
+
+        # Only apply TRIM/CAST to text columns to preserve zonemaps and vectorization
+        if is_text:
+            where_clause = f"{col_sql} IS NOT NULL AND TRIM(CAST({col_sql} AS VARCHAR)) != ''"
+        else:
+            where_clause = f"{col_sql} IS NOT NULL"
+
         query = (
             f"SELECT DISTINCT {col_sql} "
             f"FROM {self.current_view_name} "
-            f"WHERE {col_sql} IS NOT NULL AND TRIM(CAST({col_sql} AS VARCHAR)) != '' "
+            f"WHERE {where_clause} "
             f"ORDER BY {col_sql} ASC "
             f"LIMIT {limit}"
         )
         try:
             res = self.conn.execute(query).fetchall()
-            return [r[0] for r in res]
+            vals = [r[0] for r in res]
+            self._distinct_cache[cache_key] = vals
+            return vals
         except Exception:
             return []
 
