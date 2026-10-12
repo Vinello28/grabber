@@ -172,3 +172,12 @@
 - Applicare trasformazioni uniformi su stringhe (es. `TRIM(CAST(col AS VARCHAR))`) su colonne numeriche, date o booleane distrugge l'accelerazione SIMD, i zonemaps min/max e i dizionari di DuckDB e Parquet, forzando una scansione e conversione completa riga per riga.
 - **Rule**: Verificare sempre `col_meta.data_type` prima di costruire predicati o proiezioni: applicare `TRIM` o funzioni testuali esclusivamente su colonne di tipo `TEXT`, preservando tipi nativi per numerici, timestamp e booleani.
 
+## PyInstaller Binary Stripping & Dynamic Library Linkage (Shared Objects / Dylibs)
+- Filtrare manualmente librerie native condivise in PyInstaller (`a.binaries = [b for b in a.binaries if 'xxx' not in b[0].lower()]`) basandosi solo sul nome concettuale del componente è pericoloso: i moduli binari C++/Cython (come `pyarrow/lib.cpython-*.so`) sono compilati con dipendenze dirette a livello di linker dinamico (`LC_LOAD_DYLIB` su macOS, `DT_NEEDED` su Linux) verso librerie shared interne (es. `libarrow_substrait.dylib`).
+- Se una dylib/so referenziata viene esclusa dal bundle, macOS `dyld` o Linux `ld.so` fallisce immediatamente con `ImportError: dlopen(...): Library not loaded: @rpath/...` al momento del caricamento del modulo Python.
+- **Rule**:
+  1. Prima di escludere qualsiasi binario da `a.binaries`, verificare SEMPRE con strumenti di analisi delle dipendenze (`otool -L` su macOS, `ldd` su Linux, `dumpbin` su Windows) che nessun modulo estensione `.so` / `.pyd` dipenda da esso.
+  2. Non escludere MAI `libarrow_substrait` in quanto è una dipendenza diretta di `pyarrow/lib.cpython-*.so`.
+  3. Mantenere sempre test automatici di regressione sul file di spec (`grabber.spec`) per prevenire reintroduzioni accidentali di filtri non verificati.
+
+

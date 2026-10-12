@@ -68,8 +68,9 @@ a = Analysis(
     noarchive=False,
 )
 
-# Strip unused pyarrow RPC/substrait binaries and C++ header files to save ~30MB
-a.binaries = [b for b in a.binaries if 'flight' not in b[0].lower() and 'substrait' not in b[0].lower()]
+# Strip pyarrow Flight RPC binaries (unused in local engine, saves ~23MB) and C++ header/test files
+# Note: libarrow_substrait must NOT be excluded as pyarrow.lib dynamically links against it.
+a.binaries = [b for b in a.binaries if 'flight' not in b[0].lower()]
 a.datas = [d for d in a.datas if not d[0].endswith('.h') and '/tests/' not in d[0]]
 
 

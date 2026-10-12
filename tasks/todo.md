@@ -697,4 +697,34 @@ L'obiettivo è:
   - Linter Ruff: **0 errori** (`All checks passed!`).
   - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
 
+---
+
+## 29. Risoluzione ImportError PyArrow dylib mancante (@rpath/libarrow_substrait.2500.dylib)
+
+### Todo List
+- [x] 29.1 Diagnosi & Analisi dipendenze native PyArrow (`otool -L`) <!-- id: 29.1 -->
+- [x] 29.2 Correzione `grabber.spec` (rimozione filtro errato su `substrait`) <!-- id: 29.2 -->
+- [x] 29.3 Risoluzione immediata per l'app installata su `Desktop/Grabber.app` <!-- id: 29.3 -->
+- [x] 29.4 Aggiunta test automatico di regressione packaging per `grabber.spec` <!-- id: 29.4 -->
+- [x] 29.5 Esecuzione test suite (`pytest`) e linters (`ruff`) <!-- id: 29.5 -->
+- [x] 29.6 Aggiornamento `tasks/lessons.md` e Review in `tasks/todo.md` <!-- id: 29.6 -->
+
+### Review Section — Risoluzione ImportError PyArrow dylib mancante
+- **Causa Radice Individuata**:
+  - In `grabber.spec`, la riga di ottimizzazione dimensioni introdotta per ripulire i binari di PyArrow (`a.binaries = [b for b in a.binaries if 'flight' not in b[0].lower() and 'substrait' not in b[0].lower()]`) escludeva arbitrariamente `libarrow_substrait.2500.dylib`.
+  - Tramite disassemblaggio e verifica dipendenze dinamiche (`otool -L`), è stato riscontrato che i moduli core Cython di PyArrow (`pyarrow/lib.cpython-312-darwin.so`, `_compute`, `_acero`, `_dataset`, ecc.) sono collegati a tempo di compilazione direttamente a `@rpath/libarrow_substrait.2500.dylib`.
+  - All'avvio dell'app su macOS, il caricamento di `src/adapters/xml_adapter.py` invoca `import pyarrow as pa`, innescando il fallimento di `dyld` con `ImportError: Library not loaded: @rpath/libarrow_substrait.2500.dylib`.
+- **Risoluzione Implementata**:
+  - `grabber.spec`: Rimosso `'substrait'` dal filtro di esclusione dei binari, mantenendo esclusivamente il filtro sicuro su `flight` (RPC di rete inutilizzato) e la rimozione di header C++ e test. Documentato il motivo per cui `substrait` deve essere preservato.
+  - `Desktop/Grabber.app`: Ripristinate direttamente le librerie `libarrow_substrait.2500.dylib` e `_substrait.cpython-312-darwin.so` all'interno dei bundle `Contents/Frameworks/` e `Contents/Frameworks/pyarrow/` dell'applicazione già installata sul Desktop.
+  - Validazione live: Testato con successo il caricamento dinamico di tutte le 18 estensioni `.so` di PyArrow con `ctypes.CDLL` e verificato l'avvio del server desktop standalone (`Grabber --serve 8519`) con risposta HTTP `200 OK` e `_stcore/health` `ok`.
+  - Regression testing: Aggiunto `tests/test_packaging_spec.py` con 3 test che prevengono esclusioni accidentali di `substrait` nel file `.spec` e verificano la presenza dei file dylib nel pacchetto `pyarrow`.
+  - Lessons learned: Registrata in `tasks/lessons.md` la regola di verifica con `otool -L`/`ldd` prima di qualsiasi esclusione di librerie condivise native.
+- **Quality Assurance**:
+  - Test suite pytest: **102 passati, 13 skipped** in **1.34s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
+
+
+
 
