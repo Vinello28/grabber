@@ -137,6 +137,31 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
                     if st.button("Riavvia indicizzazione XML da zero", key="btn_reindex_xml", use_container_width=True):
                         _run_xml_indexing(engine, active_schema, clean_cache=True)
 
+        elif active_schema.source_format == "csv":
+            analysis = DatasetDetector.analyze_path(active_schema.source_path)
+            cache_path = engine.csv_adapter.get_cache_path(analysis["files"])
+            is_indexed = cache_path.exists() and any(cache_path.glob("**/*.parquet"))
+
+            if not is_indexed:
+                st.sidebar.info(
+                    "💡 **Ottimizzazione prestazioni**: indicizza questo CSV in formato Parquet compresso per "
+                    "velocizzare i caricamenti e gli ordinamenti fino a 20x."
+                )
+                if st.sidebar.button("⚡ Indicizza CSV in Parquet (Ultra-Fast)", key="btn_index_csv", use_container_width=True):
+                    _run_csv_indexing(engine, active_schema)
+            else:
+                st.sidebar.success("⚡ **Cache Parquet attiva**: query e filtri ultra-rapidi.")
+                with st.sidebar.expander("🔄 Re-indicizza / Aggiorna Cache CSV", expanded=False):
+                    st.caption("Usa questi controlli per rigenerare o eliminare la cache Parquet di questo CSV.")
+                    if st.button("Riavvia indicizzazione CSV da zero", key="btn_reindex_csv", use_container_width=True):
+                        _run_csv_indexing(engine, active_schema, clean_cache=True)
+                    if st.button("🗑️ Rimuovi cache di questo CSV", key="btn_remove_csv_cache", use_container_width=True):
+                        import shutil
+                        shutil.rmtree(cache_path, ignore_errors=True)
+                        engine.connect_dataset(active_schema.source_path)
+                        st.sidebar.info("Cache rimossa. Il dataset è tornato in lettura diretta da CSV.")
+                        st.rerun()
+
         # Display metadata card
         st.sidebar.markdown("---")
         st.sidebar.markdown(f"**Formato:** `{active_schema.source_format.upper()}`")
@@ -174,3 +199,22 @@ def _run_xml_indexing(engine: DuckDBEngine, schema: DatasetSchema, clean_cache: 
         engine.index_xml_dataset(progress_callback=on_progress, clean_cache=clean_cache)
     st.sidebar.success("Indicizzazione completata con successo!")
     st.rerun()
+
+
+def _run_csv_indexing(engine: DuckDBEngine, schema: DatasetSchema, clean_cache: bool = False) -> None:
+    """Run fast native DuckDB CSV-to-Parquet conversion with UI progress updates."""
+    progress_bar = st.sidebar.progress(0.0)
+    status_text = st.sidebar.empty()
+
+    def on_progress(frac: float):
+        progress_bar.progress(min(1.0, frac))
+        if frac < 1.0:
+            status_text.caption(f"Conversione in corso... ({int(frac * 100)}%)")
+        else:
+            status_text.caption("Conversione completata!")
+
+    with st.spinner("Conversione vettorializzata CSV in Parquet (ZSTD)..."):
+        engine.index_csv_dataset(progress_callback=on_progress, clean_cache=clean_cache)
+    st.sidebar.success("Indicizzazione CSV completata con successo!")
+    st.rerun()
+

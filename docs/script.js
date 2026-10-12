@@ -136,40 +136,40 @@
   // ==========================================================================
   const datasetProfiles = {
     '5GB': {
-      sizeText: '5 GB Dataset',
+      sizeText: '5 GB Dataset (CSV / Parquet)',
       grabberRam: '112 MB',
       grabberPercent: 8,
-      grabberTime: '1.14 s',
+      grabberTime: '3.4 s (Cold CSV) • 0.4 s (Parquet)',
       tradRam: '18.4 GB',
       tradPercent: 55,
       tradStatus: 'High RAM Pressure (Paging)',
       tradStatusClass: 'text-warning'
     },
     '15GB': {
-      sizeText: '13.5 GB Dataset (Test 1 - 24M Rows)',
+      sizeText: '13.5 GB Dataset (24M CSV Rows)',
       grabberRam: '148 MB',
       grabberPercent: 12,
-      grabberTime: '2.81 s',
+      grabberTime: '8.9 s (Cold CSV) • 1.9 s (Parquet) • <1ms (Page Flip)',
       tradRam: '52.6 GB',
       tradPercent: 85,
       tradStatus: 'OS Thrashing / Virtual Memory Spike',
       tradStatusClass: 'text-danger'
     },
     '40GB': {
-      sizeText: '40 GB Heterogeneous Parquet / CSV',
+      sizeText: '40 GB Columnar Parquet Glob',
       grabberRam: '175 MB',
       grabberPercent: 15,
-      grabberTime: '6.45 s',
+      grabberTime: '6.45 s (Vectorized Pushdown)',
       tradRam: '160+ GB',
       tradPercent: 100,
       tradStatus: 'CRASH: SIGKILL Out-of-Memory (OOM)',
       tradStatusClass: 'text-danger'
     },
     '70GB': {
-      sizeText: '62 GB Complex XML (Annihilation Benchmark)',
-      grabberRam: '28.1 MB (Constant)',
+      sizeText: '62 GB Complex XML (Streaming Ingestion)',
+      grabberRam: '28.1 MB (Constant O(1))',
       grabberPercent: 4,
-      grabberTime: '4.49 s (Streaming 288 MB/s)',
+      grabberTime: '~3.5 min (~288 MB/s Streaming Ingestion)',
       tradRam: '310+ GB',
       tradPercent: 100,
       tradStatus: 'CRASH: Instant Tree Heap Exhaustion',

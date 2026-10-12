@@ -147,9 +147,10 @@ def render_data_viewer(
         st.session_state["page_num_input"] = 1
 
     # Status banner
+    cache_badge = " ⚡ *(da cache risultati)*" if getattr(result, "from_cache", False) else ""
     st.info(
         f"**Risultati trovati:** `{total_rows:,}` righe corrispondenti  |  "
-        f"**Tempo esecuzione:** `{result.execution_time_seconds * 1000:.1f} ms`  |  "
+        f"**Tempo esecuzione:** `{result.execution_time_seconds * 1000:.1f} ms`{cache_badge}  |  "
         f"**Pagina:** `{current_page} di {total_pages}`"
     )
 

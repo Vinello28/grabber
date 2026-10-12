@@ -5,21 +5,39 @@ Handles delimiters, multi-file globs, quotes, messy characters, and schema sniff
 
 from __future__ import annotations
 
+import hashlib
 import os
+from pathlib import Path
 from typing import Any
 
 import duckdb
 
 from src.core.interfaces import IDatasetAdapter
 from src.core.models import ColumnMeta, DatasetSchema, DataType
+from src.core.paths import get_parquet_cache_dir
 
 
 class CsvAdapter(IDatasetAdapter):
     """Adapter for CSV datasets."""
 
-    def __init__(self, delimiter: str | None = None, parallel: bool | None = None):
+    def __init__(
+        self,
+        delimiter: str | None = None,
+        parallel: bool | None = None,
+        cache_dir: Path | None = None,
+    ):
         self.delimiter = delimiter
         self.parallel = parallel
+        self._cache_dir = cache_dir or get_parquet_cache_dir()
+
+    def get_cache_path(self, path_or_files: Any) -> Path:
+        """Derive cache directory for a CSV dataset based on hash of paths."""
+        if isinstance(path_or_files, list):
+            path_repr = "|".join(sorted(str(Path(p).resolve()) for p in path_or_files))
+        else:
+            path_repr = str(Path(path_or_files).resolve())
+        path_hash = hashlib.md5(path_repr.encode("utf-8")).hexdigest()[:12]
+        return self._cache_dir / f"csv_{path_hash}"
 
     def can_handle(self, path: str) -> bool:
         lower = path.lower()
@@ -119,22 +137,35 @@ class CsvAdapter(IDatasetAdapter):
             total_size = os.path.getsize(sample_file)
             source_path = sample_file
 
-        delim = self.sniff_delimiter(sample_file)
-        sql_source = self.build_sql_source(path_or_files, delim=delim)
+        cache_path = self.get_cache_path(path_or_files)
+        has_cache = cache_path.exists() and any(cache_path.glob("**/*.parquet"))
 
-        # Inspect table structure and sample rows with automatic fallback if parallel scanner fails
-        try:
+        row_count_est = None
+        if has_cache:
+            safe_cache = str(cache_path.resolve()).replace("'", "''")
+            sql_source = f"read_parquet('{safe_cache}/**/*.parquet', union_by_name=true)"
             describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
             sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
-        except Exception as e:
-            err_msg = str(e).lower()
-            if "parallel scanner does not support null_padding" in err_msg or "disable the parallel csv reader with parallel=false" in err_msg:
-                self.parallel = False
-                sql_source = self.build_sql_source(path_or_files, delim=delim, parallel=False)
+            count_res = duckdb_conn.execute(f"SELECT COUNT(*) FROM {sql_source}").fetchone()
+            if count_res:
+                row_count_est = count_res[0]
+        else:
+            delim = self.sniff_delimiter(sample_file)
+            sql_source = self.build_sql_source(path_or_files, delim=delim)
+
+            # Inspect table structure and sample rows with automatic fallback if parallel scanner fails
+            try:
                 describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
                 sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
-            else:
-                raise
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "parallel scanner does not support null_padding" in err_msg or "disable the parallel csv reader with parallel=false" in err_msg:
+                    self.parallel = False
+                    sql_source = self.build_sql_source(path_or_files, delim=delim, parallel=False)
+                    describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
+                    sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+                else:
+                    raise
 
         columns: list[ColumnMeta] = []
         for _, row in describe_df.iterrows():
@@ -160,6 +191,7 @@ class CsvAdapter(IDatasetAdapter):
             source_path=source_path,
             source_format="csv",
             columns=columns,
+            row_count_estimate=row_count_est,
             total_size_bytes=total_size,
             file_count=file_count,
             table_identifier="csv_source",

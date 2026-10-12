@@ -129,6 +129,7 @@ def _render_welcome_screen():
     ### Funzionalità:
     - **Rilevamento automatico**: Individua colonne e tipologie di dati per CSV, Parquet e XML.
     - **Elaborazione Out-of-Core**: Esegue query analitiche vettorializzate con DuckDB e spillover su disco.
+    - **Paginazione ultra-rapida e indicizzazione**: Risultati in cache per cambi pagina istantanei (<1ms) e indicizzazione Parquet opzionale per CSV ed XML.
     - **Filtri dinamici**: Filtri adattati al tipo di dato (testo, numeri, date, categorie).
     - **Aggregazioni**: Raggruppamenti, metriche e calcolo valori distinti.
     - **Esportazione**: Esportazione dei risultati in CSV o Parquet.

@@ -195,7 +195,18 @@
 - **Rule**:
   1. Usare SEMPRE il flag `-y` (`zip -r -y ...`) nei comandi di compressione di bundle macOS su script di build e CI/CD workflow (`build_releases.yml`).
   2. Per copiare o sincronizzare applicazioni `.app` localmente, usare sempre utility che preservano rigorosamente i symlink (`rsync -a` o `cp -a`), evitando copie cieche che dereferenziano i link simbolici.
+## Pagination Re-scans on Unmaterialized Views and Result Table Caching
+- Quando un dataset poggia su viste SQL virtuali (`CREATE VIEW ... AS SELECT * FROM read_csv(...)`), ogni singola richiesta di paginazione con `LIMIT / OFFSET` eseguita a valle riesegue la scansione integrale da zero del file fisico su disco. Se è presente una clausola `ORDER BY`, DuckDB deve scansionare ed esaminare l'intero file (es. 20M record / 14GB) ad ogni click di cambio pagina per calcolare l'offset.
+- Caching scalare (`COUNT(*)` via filter fingerprint) non previene la ri-esecuzione di `SELECT ... LIMIT n OFFSET m`.
+- **Rule**:
+  1. Calcolare sempre un'impronta deterministica della query di base (`get_base_query_fingerprint()`) escludendo unicamente `LIMIT` e `OFFSET`.
+  2. Materializzare i risultati della query di base in una tabella temporanea DuckDB (`CREATE OR REPLACE TEMP TABLE _active_query_cache AS ...`). Le richieste di paginazione successive estraggono unicamente lo slice richiesto in tempo sub-millisecondo (<1ms).
+  3. Pulire sempre proattivamente la tabella temporanea (`DROP TABLE IF EXISTS ...`) al cambio dataset o chiusura connessione.
+  4. Per file CSV di grandi dimensioni, offrire e supportare l'indicizzazione persistente in Parquet compresso (ZSTD), abbattendo sia la scansione iniziale sia l'uso di memoria I/O.
 
-
-
-
+## Recompilation of Standalone Executable Bundles After Source Modifications
+- In un'applicazione fornita come eseguibile desktop standalone (`dist/Grabber.app` o `Desktop/Grabber.app`), modificare i file sorgente in `src/` aggiorna solo l'ambiente di sviluppo e i test locali. L'eseguibile compilato contiene una copia congelata dei file sorgente (`Contents/Resources/src`).
+- L'utente che lancia l'applicazione aprendo il file `.app` o cliccando sull'icona desktop eseguirà sempre la versione congelata precedentemente finché non viene rieseguito `build_executable.py`.
+- **Rule**:
+  1. Ogni volta che si completano modifiche a feature visibili, logica di engine, componenti UI o bugfix in un'applicazione con bundle desktop locale, non considerare il task concluso finché non viene ricompilato l'eseguibile (`build_executable.py`).
+  2. Verificare sempre la presenza fisica dei file aggiornati dentro il bundle (`Contents/Resources/src/...`) e testare l'avvio del binario compilato.

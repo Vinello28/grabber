@@ -174,6 +174,17 @@ class QuerySpec:
         gs_logic = getattr(self.global_search_logic, "value", str(self.global_search_logic))
         return f"{f_repr}|{f_logic}|{self.global_search}|{gs_logic}|{gs_cols}|{grp_repr}|{agg_repr}"
 
+    def get_base_query_fingerprint(self) -> str:
+        """Deterministic fingerprint representing the base query result set.
+
+        Includes filters, aggregations, groupings, order_by, and selected_columns,
+        strictly excluding limit and offset for pagination cache reuse.
+        """
+        filter_fp = self.get_filter_fingerprint()
+        order_repr = tuple(self.order_by or [])
+        cols_repr = tuple(self.selected_columns or [])
+        return f"{filter_fp}|ord:{order_repr}|cols:{cols_repr}"
+
 
 @dataclass
 class QueryResult:
@@ -184,6 +195,7 @@ class QueryResult:
     table: Any = None
     _df: Any = None
     _rows: list[list[Any]] | None = None
+    from_cache: bool = False
 
     def __init__(
         self,
@@ -194,6 +206,7 @@ class QueryResult:
         is_aggregated: bool = False,
         df: Any = None,
         table: Any = None,
+        from_cache: bool = False,
     ) -> None:
         self.columns = columns
         self.total_matching_rows = total_matching_rows
@@ -202,6 +215,7 @@ class QueryResult:
         self.table = table
         self._df = df
         self._rows = rows
+        self.from_cache = from_cache
 
     @property
     def df(self) -> Any:

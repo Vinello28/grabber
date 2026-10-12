@@ -197,7 +197,7 @@
             <div class="code-line"><span>SELECT REGIONE, COUNT(*) AS TOT, SUM(IMPORTO) AS TOT_EROGATO</span></div>
             <div class="code-line"><span>FROM read_parquet('data/**/*.parquet', union_by_name=true)</span></div>
             <div class="code-line"><span>WHERE CODICE_FISCALE ILIKE '%VRN%' GROUP BY REGIONE;</span></div>
-            <div class="code-line code-output"><span class="code-success">Query executed in 2.81s | Peak Memory: 148 MB | 0 OOM</span></div>
+            <div class="code-line code-output"><span class="code-success">Query executed in 1.94s | Peak Memory: 148 MB | 0 OOM</span></div>
           </div>
         </div>
       </div>
@@ -209,9 +209,9 @@
     <div class="container">
       <div class="metrics-grid">
         <div class="metric-card">
-          <div class="metric-value gradient-text-gold">23.9M+</div>
-          <div class="metric-label">Records in 2.81s</div>
-          <div class="metric-desc">Instant columnar scan &amp; multi-field filtering on a 13.5GB dataset.</div>
+          <div class="metric-value gradient-text-gold">&lt; 1 ms</div>
+          <div class="metric-label">Cached Pagination Flip</div>
+          <div class="metric-desc">Sub-millisecond page flips on 20M+ records with zero re-scans.</div>
         </div>
 
         <div class="metric-card">
@@ -411,7 +411,7 @@
             <ul class="sim-specs">
               <li>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                Execution Time: <strong id="sim-grabber-time" style="color: var(--text-primary); margin-left: 4px;">2.81 s</strong>
+                Execution Time: <strong id="sim-grabber-time" style="color: var(--text-primary); margin-left: 4px;">8.9 s (Cold CSV) • 1.9 s (Parquet) • &lt;1ms (Page Flip)</strong>
               </li>
               <li>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -474,33 +474,33 @@
           </thead>
           <tbody>
             <tr class="highlight-row">
-              <td><strong>Test 1 (Scan &amp; Count)</strong></td>
+              <td><strong>Test 1 (Raw CSV Cold Scan)</strong></td>
               <td>12 CSV Files</td>
               <td><strong>13.5 GB</strong></td>
               <td>23,957,368</td>
-              <td>Full Columnar Scan &amp; Count</td>
-              <td><strong>2.81 s</strong></td>
+              <td>Full Columnar Scan &amp; Count (Cold Disk)</td>
+              <td><strong>8.91 s</strong></td>
               <td>&lt; 150 MB</td>
             </tr>
             <tr>
-              <td><strong>Test 1 (Filter &amp; Export)</strong></td>
-              <td>12 CSV Files</td>
-              <td><strong>13.5 GB</strong></td>
+              <td><strong>Test 1 (Indexed Parquet)</strong></td>
+              <td>Parquet (ZSTD)</td>
+              <td><strong>1.8 GB</strong></td>
               <td>23,957,368</td>
-              <td>Filter Codice Fiscale + Disk Export</td>
-              <td><strong>2.92 s</strong></td>
+              <td>Filter Codice Fiscale + Aggregations</td>
+              <td><strong>1.94 s</strong></td>
               <td>&lt; 180 MB</td>
             </tr>
-            <tr>
-              <td><strong>Test 1 (Group By)</strong></td>
-              <td>12 CSV Files</td>
-              <td><strong>13.5 GB</strong></td>
-              <td>23,957,368</td>
-              <td>Group By Region + Sum Metrics</td>
-              <td><strong>3.03 s</strong></td>
-              <td>&lt; 220 MB</td>
-            </tr>
             <tr class="highlight-row">
+              <td><strong>Test 1 (Pagination Navigation)</strong></td>
+              <td>Result Cache</td>
+              <td><strong>23.9M Rows</strong></td>
+              <td>50 per page</td>
+              <td>Interactive Page Flip (Prev/Next/Jump)</td>
+              <td><strong>&lt; 1 ms</strong></td>
+              <td>Flat (&lt; 100 KB)</td>
+            </tr>
+            <tr>
               <td><strong>Annihilation Stress Test</strong></td>
               <td>Complex XML</td>
               <td><strong>1.3 GB (single)</strong></td>
