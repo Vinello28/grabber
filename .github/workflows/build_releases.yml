@@ -78,7 +78,7 @@ jobs:
         if: matrix.platform == 'macos'
         run: |
           cd dist
-          zip -r ../${{ matrix.artifact_name }} Grabber.app
+          zip -r -y ../${{ matrix.artifact_name }} Grabber.app
           cd ..
 
       - name: Package Linux Binary

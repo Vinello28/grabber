@@ -748,9 +748,43 @@ L'obiettivo è:
   - `desktop_entrypoint.py`: Implementato `_BootstrapProxy` per il caricamento pigro di Streamlit, evitando che il processo principale della finestra nativa pywebview allochi 40 MB di librerie inutilizzate all'avvio.
   - `tests/test_performance_optimizations.py`: Introdotti 6 nuovi test automatizzati per validare lazy evaluation, subquery count order stripping, pulizia null check numerici, proxy bootstrap e conversione Parquet diretta.
 - **Quality Assurance**:
-  - Test suite pytest: **108 passati, 13 skipped** in **1.62s**.
+
+
+---
+
+## 31. Analisi e Piano di Riduzione Dimensioni del Pacchetto Eseguibile (Grabber.app / Installer)
+
+### Todo List
+- [x] 31.1 [Audit & Root Cause Analysis] Ispezione anatomia pacchetto, identificazione file duplicati (symlink dereferenziati) e moduli superflui <!-- id: 31.1 -->
+- [-] 31.2 [PyInstaller Spec Optimization] Esclusione librerie Tkinter/Tcl, moduli test PyArrow (omesso su richiesta dell'utente per focalizzarsi esclusivamente sul punto 1) <!-- id: 31.2 -->
+- [x] 31.3 [CI/CD Release Packaging] Aggiunta flag `-y` (`--symlinks`) al comando `zip` in `.github/workflows/build_releases.yml` <!-- id: 31.3 -->
+- [x] 31.4 [Desktop Bundle Dedup / Relink] Rigenerazione e sincronizzazione bundle con symlink preservati in `Desktop/Grabber.app` (da 716 MB a 246 MB) <!-- id: 31.4 -->
+- [x] 31.5 [QA & Packaging Verification] Verifica assenza regressioni (`pytest`), linters (`ruff`, `mypy`), collaudo live headless (`200 OK`) e Review <!-- id: 31.5 -->
+
+### Review Section — Risoluzione Causa Principale e Riduzione Dimensioni Pacchetto (Punto 1)
+- **Diagnosi e Causa Radice Individuata**:
+  - Il bundle macOS generato da PyInstaller archivia tutti i binari nativi pesanti (`.so`, `.dylib`, `Python.framework`) in `Contents/Frameworks/` e struttura l'accesso tramite **collegamenti simbolici (symlink)** interni verso `Contents/Resources/` e all'interno di `Frameworks/`.
+  - Nel workflow di rilascio CI/CD ([`.github/workflows/build_releases.yml#L81`](.github/workflows/build_releases.yml#L81)), il comando di compressione invocava `zip -r ../Grabber-macOS.zip Grabber.app` **senza l'opzione `-y` / `--symlinks`**.
+  - Senza `-y`, `zip` dereferenziava ciascun collegamento simbolico, trasformando centinaia di puntatori in copie fisiche complete.
+  - All'estrazione, l'applicazione finale installata sul Desktop conteneva **1.172 file duplicati**, con 4 copie integrali di `libarrow.2500.dylib` (172 MB solo per questa libreria) e l'intera cartella `Resources` duplicata a 345 MB (clone di `Frameworks` da 354 MB), gonfiando il pacchetto a ben **716 MB**.
+- **Interventi Realizzati**:
+  1. **Correzione CI/CD Packaging ([`.github/workflows/build_releases.yml`](.github/workflows/build_releases.yml))**:
+     - Aggiornato il comando di compressione macOS in `zip -r -y ../${{ matrix.artifact_name }} Grabber.app`.
+     - In questo modo tutti gli archivi generati da GitHub Actions preservano rigorosamente la topologia dei collegamenti simbolici. La dimensione dell'archivio zip di rilascio scende a **~89 MB** e l'applicazione estratta occupa solo **~246 MB** (risparmio di **470 MB**, **-65.6%**).
+  2. **Rigenerazione e Sincronizzazione Desktop Bundle ([`Desktop/Grabber.app`](file:///Users/gabrielevianello/Desktop/Grabber.app))**:
+     - Eseguito `build_executable.py` con PyInstaller producendo il bundle `dist/Grabber.app` (246 MB).
+     - Sincronizzato con `rsync -a --delete` all'interno di `/Users/gabrielevianello/Desktop/Grabber.app`, ripristinando integralmente tutti i collegamenti simbolici corretti ed eliminando ogni singolo file duplicato.
+     - Dimensione finale verificata sul Desktop: **246 MB** (da **716 MB** precedenti).
+  3. **Configurazione Linter / Type Checker ([`pyproject.toml`](pyproject.toml))**:
+     - Aggiunta la sezione `[tool.mypy]` con `ignore_missing_imports = true` per uniformare l'ambiente di QA locale.
+- **Validazione & Quality Assurance**:
+  - Test avvio eseguibile: Lanciato `/Users/gabrielevianello/Desktop/Grabber.app/Contents/MacOS/Grabber --serve 8519`; endpoint `/` e `/_stcore/health` hanno risposto entrambi con `200 OK`.
+  - Caricamento dinamico: `lib.cpython-312-darwin.so` e `libarrow_substrait.2500.dylib` caricati e collaudati con successo via `ctypes.CDLL`.
+  - Test suite pytest: **108 passati, 13 skipped** in **1.44s**.
   - Linter Ruff: **0 errori** (`All checks passed!`).
   - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
+
+
 
 
 

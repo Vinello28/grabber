@@ -189,7 +189,13 @@
 ## Streamlit Zero-Copy Apache Arrow Table Pipeline
 - Passare un `pandas.DataFrame` a Streamlit costringe il runtime a scansionare e riconvertire il DataFrame in Apache Arrow IPC prima di inviarlo tramite WebSocket al client.
 - DuckDB produce internamente vettori colonnari compatibili Arrow: l'uso di `cursor.to_arrow_table()` seguito da `st.dataframe(result.table)` consente un bypass diretto di Pandas, riducendo l'allocazione RAM del 97% e velocizzando il rendering di oltre 100x.
-- **Rule**: Conservare `pyarrow.Table` nativo nel risultato della query e delegare la creazione del DataFrame Pandas solo a chiamate esplicite lazy.
+## macOS Application Bundle Packaging and Symlink Dereferencing (`zip -y`)
+- I bundle macOS `.app` generati da PyInstaller archiviano le librerie native pesanti in `Contents/Frameworks/` e collegano `Contents/Resources/` e moduli cross-framework tramite **collegamenti simbolici (symlink)** interni.
+- Il comando standard `zip -r` senza il flag `-y` (`--symlinks`) **dereferenzia** tutti i collegamenti simbolici convertendoli in copie fisiche complete. Questo duplica fino a 4 volte librerie massicce (es. 4 copie di `libarrow.2500.dylib` per 172 MB) e clona l'intera cartella Frameworks in Resources, facendo esplodere il bundle estratto da ~246 MB a oltre 716 MB.
+- **Rule**:
+  1. Usare SEMPRE il flag `-y` (`zip -r -y ...`) nei comandi di compressione di bundle macOS su script di build e CI/CD workflow (`build_releases.yml`).
+  2. Per copiare o sincronizzare applicazioni `.app` localmente, usare sempre utility che preservano rigorosamente i symlink (`rsync -a` o `cp -a`), evitando copie cieche che dereferenziano i link simbolici.
+
 
 
 
