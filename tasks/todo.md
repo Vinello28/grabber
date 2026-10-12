@@ -725,6 +725,35 @@ L'obiettivo è:
   - Linter Ruff: **0 errori** (`All checks passed!`).
   - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
 
+---
+
+## 30. Ottimizzazioni Architetturali di Throughput e Riduzione Memory Footprint
+
+### Todo List
+- [x] 30.1 [UI & IPC Zero-Copy] Risoluzione de-lazificazione in `data_viewer.py` e supporto nativo PyArrow Table in `QueryResult` / `st.dataframe` <!-- id: 30.1 -->
+- [x] 30.2 [Engine & Predicate Pushdown] Ripristino Zonemap Pushdown in `query_builder.py` (predicati diretti su numerici), rimozione `ORDER BY` da count subqueries e pulizia `IS_NULL` <!-- id: 30.2 -->
+- [x] 30.3 [DuckDB Engine & Allocator] Pragmi di caching/allocator (`parquet_metadata_cache`, `allocator_background_threads`), LRU su `_distinct_cache` e isolamento `temp_directory` <!-- id: 30.3 -->
+- [x] 30.4 [Ingestion Streaming Parquet] Pipeline PyArrow diretta in `xml_adapter.py` (`from_pylist`) e budgeting RAM per i worker <!-- id: 30.4 -->
+- [x] 30.5 [Desktop & Export Panel] Apertura nativa file manager OS in `export_panel.py` e lazy import di `bootstrap` in `desktop_entrypoint.py` <!-- id: 30.5 -->
+- [x] 30.6 [QA & Regression Tests] Esecuzione suite test (`pytest`), linters (`ruff`, `mypy`), aggiornamento `tasks/lessons.md` e Review <!-- id: 30.6 -->
+
+### Review Section — Ottimizzazioni Architetturali di Throughput e Memory Footprint
+- **Interventi Realizzati**:
+  - `src/core/models.py`: Esteso `QueryResult` con supporto nativo ad Apache Arrow Table (`self.table`), property lightweight `row_count` per evitare materializzazioni premature e delegazione lazy per `.df` e `.rows`.
+  - `src/ui/components/data_viewer.py`: Risolta la de-lazificazione accidentale alla riga 133 sostituendo `len(result.rows) == 0` con `result.row_count == 0`, eliminando l'allocazione di decine di migliaia di oggetti Python per render; abilitato il rendering diretto di `result.table` in `st.dataframe`.
+  - `src/engine/query_builder.py`: Ottimizzato `build_count_query` rimuovendo `ORDER BY` all'interno delle sottoquery di conteggio aggregato (`_build_aggregated_query(..., include_order_by=False)`); snellite le clausole `IS_NULL` e `IS_NOT_NULL` per colonne numeriche evitando la conversione in stringa (`TRIM(CAST(... AS VARCHAR))`).
+  - `src/engine/duckdb_engine.py`: Attivati i pragmi DuckDB per il caching dei metadati Parquet (`parquet_metadata_cache=true`, `enable_external_file_cache=true`) e la deallocazione proattiva della memoria con thread di background (`allocator_background_threads=true`, `allocator_flush_threshold='128MB'`); isolata la cartella di spill (`instance_spill_dir`) per singolo processo/istanza; introdotta politica di evizione LRU (max 100 elementi) su `_distinct_cache`; aggiunti `CHECKPOINT` e `gc.collect()` al cambio dataset.
+  - `src/adapters/xml_adapter.py`: Ottimizzata la scrittura batch Parquet tramite inserimento diretto da lista di dizionari (`pa.Table.from_pylist(batch)`) bypassando completamente l'intermedio `pd.DataFrame`; implementato il budgeting di sicurezza RAM (~1.5GB per worker) nel pool di conversione multi-processo.
+  - `src/ui/components/export_panel.py`: Aggiunta azione nativa OS ("📂 Mostra nella cartella") con comando di sistema (`open -R`, `explorer /select`, `xdg-open`) a costo **0 byte RAM**; protetto il download browser confinandolo a file $\le 50$ MB.
+  - `desktop_entrypoint.py`: Implementato `_BootstrapProxy` per il caricamento pigro di Streamlit, evitando che il processo principale della finestra nativa pywebview allochi 40 MB di librerie inutilizzate all'avvio.
+  - `tests/test_performance_optimizations.py`: Introdotti 6 nuovi test automatizzati per validare lazy evaluation, subquery count order stripping, pulizia null check numerici, proxy bootstrap e conversione Parquet diretta.
+- **Quality Assurance**:
+  - Test suite pytest: **108 passati, 13 skipped** in **1.62s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
+
+
+
 
 
 

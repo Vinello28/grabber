@@ -158,8 +158,12 @@ class QueryBuilder:
 
         # Nullability checks
         if op == FilterOperator.IS_NULL:
+            if is_numeric:
+                return f"{col_sql} IS NULL"
             return f"({col_sql} IS NULL OR TRIM(CAST({col_sql} AS VARCHAR)) = '')"
         if op == FilterOperator.IS_NOT_NULL:
+            if is_numeric:
+                return f"{col_sql} IS NOT NULL"
             return f"({col_sql} IS NOT NULL AND TRIM(CAST({col_sql} AS VARCHAR)) != '')"
 
         if val is None or (isinstance(val, str) and not val.strip()):
@@ -339,6 +343,7 @@ class QueryBuilder:
         table_ref: str,
         spec: QuerySpec,
         where_clause: str,
+        include_order_by: bool = True,
     ) -> str:
         """Build GROUP BY with aggregations."""
         select_parts: list[str] = []
@@ -365,16 +370,17 @@ class QueryBuilder:
         if group_by_parts:
             query += " GROUP BY " + ", ".join(group_by_parts)
 
-        if spec.order_by:
-            order_items = []
-            for col, asc in spec.order_by:
-                direction = "ASC" if asc else "DESC"
-                order_items.append(f"{cls.quote_ident(col)} {direction}")
-            query += " ORDER BY " + ", ".join(order_items)
-        elif spec.aggregations:
-            # Default order by first aggregation DESC
-            first_agg_alias = cls.quote_ident(spec.aggregations[0].display_alias)
-            query += f" ORDER BY {first_agg_alias} DESC"
+        if include_order_by:
+            if spec.order_by:
+                order_items = []
+                for col, asc in spec.order_by:
+                    direction = "ASC" if asc else "DESC"
+                    order_items.append(f"{cls.quote_ident(col)} {direction}")
+                query += " ORDER BY " + ", ".join(order_items)
+            elif spec.aggregations:
+                # Default order by first aggregation DESC
+                first_agg_alias = cls.quote_ident(spec.aggregations[0].display_alias)
+                query += f" ORDER BY {first_agg_alias} DESC"
 
         if spec.limit is not None:
             query += f" LIMIT {int(spec.limit)}"
@@ -421,7 +427,7 @@ class QueryBuilder:
                 limit=None,
                 offset=None,
             )
-            sub = cls._build_aggregated_query(table_ref, count_spec, where_clause)
+            sub = cls._build_aggregated_query(table_ref, count_spec, where_clause, include_order_by=False)
             return f"SELECT COUNT(*) FROM ({sub}) AS subquery"
         return f"SELECT COUNT(*) FROM {table_ref} {where_clause}".strip()
 

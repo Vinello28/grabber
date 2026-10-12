@@ -6,6 +6,7 @@ and dynamic view registration.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -51,7 +52,8 @@ class DuckDBEngine(IQueryEngine):
         temp_dir: str | None = None,
     ):
         self.temp_dir = Path(temp_dir).resolve() if temp_dir else get_spill_dir()
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.instance_spill_dir = self.temp_dir / f"session_{os.getpid()}_{id(self)}"
+        self.instance_spill_dir.mkdir(parents=True, exist_ok=True)
 
         self.memory_limit = memory_limit or ResourceMonitor.calculate_safe_memory_limit()
         self.threads = threads or (os.cpu_count() or 4)
@@ -111,10 +113,13 @@ class DuckDBEngine(IQueryEngine):
         """Apply performance and memory safety pragmas."""
         self.conn.execute(f"PRAGMA max_memory='{self.memory_limit}'")
         self.conn.execute(f"PRAGMA threads={self.threads}")
-        safe_temp_dir = str(self.temp_dir).replace("'", "''")
+        safe_temp_dir = str(self.instance_spill_dir).replace("'", "''")
         self.conn.execute(f"PRAGMA temp_directory='{safe_temp_dir}'")
         self.conn.execute("PRAGMA preserve_insertion_order=false")
-        self.conn.execute("PRAGMA enable_object_cache=true")
+        self.conn.execute("PRAGMA parquet_metadata_cache=true")
+        self.conn.execute("PRAGMA enable_external_file_cache=true")
+        self.conn.execute("PRAGMA allocator_background_threads=true")
+        self.conn.execute("PRAGMA allocator_flush_threshold='128MB'")
 
 
     def has_active_view(self) -> bool:
@@ -172,6 +177,10 @@ class DuckDBEngine(IQueryEngine):
         self._current_files = files
         self._count_cache.clear()
         self._distinct_cache.clear()
+        with contextlib.suppress(Exception):
+            self.conn.execute("CHECKPOINT")
+        import gc
+        gc.collect()
 
         if fmt == "csv":
             self.csv_adapter.parallel = None
@@ -280,18 +289,18 @@ class DuckDBEngine(IQueryEngine):
         cursor = self._execute_sql(sql)
         elapsed = time.time() - t0
 
-        df = cursor.fetchdf()
-        columns = df.columns.tolist()
+        table = cursor.to_arrow_table()
+        columns = table.column_names
 
         is_agg = bool(spec.group_by_columns or spec.aggregations)
-        total_rows = len(df) if spec.limit is None else self.count_matching_rows(spec)
+        total_rows = table.num_rows if spec.limit is None else self.count_matching_rows(spec)
 
         return QueryResult(
             columns=columns,
             total_matching_rows=total_rows,
             execution_time_seconds=round(elapsed, 3),
             is_aggregated=is_agg,
-            df=df,
+            table=table,
         )
 
     def count_matching_rows(self, spec: QuerySpec) -> int:
@@ -354,6 +363,10 @@ class DuckDBEngine(IQueryEngine):
         try:
             res = self._execute_sql(query).fetchall()
             vals = [r[0] for r in res]
+            if len(self._distinct_cache) >= 100:
+                keys_to_remove = list(self._distinct_cache.keys())[:50]
+                for k in keys_to_remove:
+                    self._distinct_cache.pop(k, None)
             self._distinct_cache[cache_key] = vals
             return vals
         except Exception:
@@ -449,10 +462,10 @@ class DuckDBEngine(IQueryEngine):
             logger.debug("Errore chiusura connessione DuckDB: %s", e)
         try:
             import shutil
-            if hasattr(self, "temp_dir") and self.temp_dir.exists():
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
+            if hasattr(self, "instance_spill_dir") and self.instance_spill_dir.exists():
+                shutil.rmtree(self.instance_spill_dir, ignore_errors=True)
         except Exception as e:
-            logger.debug("Errore rimozione temp_dir: %s", e)
+            logger.debug("Errore rimozione instance_spill_dir: %s", e)
 
     def __enter__(self) -> Self:
         return self

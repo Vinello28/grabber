@@ -181,7 +181,8 @@ class QueryResult:
     total_matching_rows: int
     execution_time_seconds: float
     is_aggregated: bool = False
-    df: Any = None
+    table: Any = None
+    _df: Any = None
     _rows: list[list[Any]] | None = None
 
     def __init__(
@@ -192,13 +193,37 @@ class QueryResult:
         execution_time_seconds: float = 0.0,
         is_aggregated: bool = False,
         df: Any = None,
+        table: Any = None,
     ) -> None:
         self.columns = columns
         self.total_matching_rows = total_matching_rows
         self.execution_time_seconds = execution_time_seconds
         self.is_aggregated = is_aggregated
-        self.df = df
+        self.table = table
+        self._df = df
         self._rows = rows
+
+    @property
+    def df(self) -> Any:
+        """Lazy accessor for pandas DataFrame; converts from Arrow table on-demand."""
+        if self._df is None and self.table is not None:
+            self._df = self.table.to_pandas()
+        return self._df
+
+    @df.setter
+    def df(self, val: Any) -> None:
+        self._df = val
+
+    @property
+    def row_count(self) -> int:
+        """Return number of fetched rows without eager materialization of python lists or pandas df."""
+        if self.table is not None:
+            return int(self.table.num_rows)
+        if self._df is not None:
+            return len(self._df)
+        if self._rows is not None:
+            return len(self._rows)
+        return 0
 
     @property
     def rows(self) -> list[list[Any]]:

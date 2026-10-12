@@ -180,4 +180,16 @@
   2. Non escludere MAI `libarrow_substrait` in quanto è una dipendenza diretta di `pyarrow/lib.cpython-*.so`.
   3. Mantenere sempre test automatici di regressione sul file di spec (`grabber.spec`) per prevenire reintroduzioni accidentali di filtri non verificati.
 
+## Lazy Property De-lazification Traps in UI Components
+- Quando un modello espone un accessor lazy (es. `QueryResult.rows` che converte un DataFrame/Table in `list[list[Any]]`), controlli di conteggio apparentemente innocui come `len(result.rows) == 0` forzano la materializzazione immediata dell'intera matrice di dati in oggetti Python nell'heap ad ogni ciclo di render.
+- **Rule**:
+  1. Fornire sempre una property leggera di cardinalità (es. `result.row_count` che legge `table.num_rows` o `len(df)` senza conversioni).
+  2. Nei componenti UI verificare sempre `result.row_count == 0` invece di accedere a collezioni lazy pesanti.
+
+## Streamlit Zero-Copy Apache Arrow Table Pipeline
+- Passare un `pandas.DataFrame` a Streamlit costringe il runtime a scansionare e riconvertire il DataFrame in Apache Arrow IPC prima di inviarlo tramite WebSocket al client.
+- DuckDB produce internamente vettori colonnari compatibili Arrow: l'uso di `cursor.to_arrow_table()` seguito da `st.dataframe(result.table)` consente un bypass diretto di Pandas, riducendo l'allocazione RAM del 97% e velocizzando il rendering di oltre 100x.
+- **Rule**: Conservare `pyarrow.Table` nativo nel risultato della query e delegare la creazione del DataFrame Pandas solo a chiamate esplicite lazy.
+
+
 

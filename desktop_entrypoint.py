@@ -25,7 +25,17 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from streamlit.web import bootstrap
+
+class _BootstrapProxy:
+    """Lazy proxy to prevent loading Streamlit in the parent desktop GUI process."""
+
+    def __getattr__(self, name: str) -> Any:
+        from streamlit.web import bootstrap as _real_bootstrap
+
+        return getattr(_real_bootstrap, name)
+
+
+bootstrap = _BootstrapProxy()
 
 APP_TITLE = "Grabber"
 SERVER_FLAG = "--serve"

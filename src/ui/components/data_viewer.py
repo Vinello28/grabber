@@ -130,7 +130,7 @@ def render_data_viewer(
     total_pages = max(1, (total_rows + page_size - 1) // page_size)
 
     # Offset recovery: if current page exceeds matching rows or rows returned empty while total_rows > 0
-    if (current_page > total_pages or len(result.rows) == 0) and total_rows > 0 and offset > 0:
+    if (current_page > total_pages or result.row_count == 0) and total_rows > 0 and offset > 0:
         current_page = 1
         st.session_state["current_page"] = 1
         st.session_state["page_num_input"] = 1
@@ -153,8 +153,10 @@ def render_data_viewer(
         f"**Pagina:** `{current_page} di {total_pages}`"
     )
 
-    # Render DataFrame (zero-copy if df available)
-    if result.df is not None and not result.df.empty:
+    # Render tabular preview (zero-copy Arrow table if available, fallback to df/rows)
+    if result.table is not None and result.table.num_rows > 0:
+        st.dataframe(result.table, use_container_width=True, height=450)
+    elif result.df is not None and not result.df.empty:
         st.dataframe(result.df, use_container_width=True, height=450)
     elif result.rows:
         df = pd.DataFrame(result.rows, columns=result.columns)

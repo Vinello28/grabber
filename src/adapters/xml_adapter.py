@@ -332,10 +332,16 @@ class XmlAdapter(IDatasetAdapter):
         target_tag = self.detect_record_tag(files[0])
         output_dir_str = str(output_dir)
 
-        # Worker count: cores of the machine minus 2 (at least 1)
+        # Worker count: cores of the machine constrained by available RAM (budget ~1.5GB per worker)
         if max_workers is None:
             cpu_total = os.cpu_count() or 4
-            max_workers = max(1, cpu_total - 2)
+            try:
+                import psutil
+                avail_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
+                ram_workers = max(1, int(avail_ram_gb / 1.5))
+                max_workers = min(max(1, cpu_total - 2), ram_workers)
+            except Exception:
+                max_workers = max(1, cpu_total - 2)
 
         # Sequential processing for single-file or 1 worker
         if len(files) == 1 or max_workers <= 1:
@@ -398,10 +404,8 @@ class XmlAdapter(IDatasetAdapter):
         file_idx: int,
         part_idx: int,
     ) -> None:
-        """Write a batch of dict records as a Parquet file."""
-        import pandas as pd
-        df = pd.DataFrame(batch)
-        table = pa.Table.from_pandas(df)
+        """Write a batch of dict records as a Parquet file using direct PyArrow Table."""
+        table = pa.Table.from_pylist(batch)
         out_file = output_dir / f"part_{file_idx:04d}_{part_idx:04d}.parquet"
         pq.write_table(table, out_file, compression="zstd")
 
