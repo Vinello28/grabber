@@ -53,7 +53,7 @@ def main():
 
         render_system_stats()
         schema = render_dataset_selector(engine)
-        render_cache_controls()
+        render_cache_controls(engine)
         render_update_checker()
 
         st.divider()
@@ -75,6 +75,7 @@ def main():
     except Exception:
         with contextlib.suppress(Exception):
             schema = engine.connect_dataset(schema.source_path)
+            st.session_state["schema"] = schema
 
     # Dataset Header Banner
     st.subheader(f"📊 Dataset: `{Path(schema.source_path).name}`")
@@ -96,7 +97,15 @@ def main():
     st.divider()
 
     # Dynamic Filter Battery & Global Search
-    filters, global_search, search_cols, filter_logic, global_search_logic = render_filter_battery(schema, engine)
+    (
+        filters,
+        global_search,
+        search_cols,
+        filter_logic,
+        global_search_logic,
+        filter_groups,
+        filter_group_logic,
+    ) = render_filter_battery(schema, engine)
 
     st.divider()
 
@@ -109,13 +118,43 @@ def main():
     ])
 
     with tab_viewer:
-        render_data_viewer(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
+        render_data_viewer(
+            schema,
+            engine,
+            filters,
+            global_search,
+            search_cols,
+            filter_logic,
+            global_search_logic,
+            filter_groups,
+            filter_group_logic,
+        )
 
     with tab_aggs:
-        render_aggregations(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
+        render_aggregations(
+            schema,
+            engine,
+            filters,
+            global_search,
+            search_cols,
+            filter_logic,
+            global_search_logic,
+            filter_groups,
+            filter_group_logic,
+        )
 
     with tab_export:
-        render_export_panel(schema, engine, filters, global_search, search_cols, filter_logic, global_search_logic)
+        render_export_panel(
+            schema,
+            engine,
+            filters,
+            global_search,
+            search_cols,
+            filter_logic,
+            global_search_logic,
+            filter_groups,
+            filter_group_logic,
+        )
 
     with tab_schema:
         _render_schema_tab(schema)

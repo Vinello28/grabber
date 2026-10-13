@@ -148,6 +148,7 @@ def build_flag_options(port: int, host: str = "127.0.0.1") -> dict[str, Any]:
         "server.enableCORS": False,
         "server.enableXsrfProtection": False,
         "global.developmentMode": False,
+        "server.fileWatcherType": "none",
     }
 
 

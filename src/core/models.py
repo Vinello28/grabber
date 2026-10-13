@@ -111,6 +111,13 @@ class FilterRule:
 
 
 @dataclass
+class FilterGroup:
+    id: str = ""
+    rules: list[FilterRule] = field(default_factory=list)
+    logic: BooleanOperator = BooleanOperator.AND  # Logic combining rules inside this group
+
+
+@dataclass
 class AggregationRule:
     column: str
     func: AggregationFunc
@@ -128,6 +135,8 @@ class AggregationRule:
 class QuerySpec:
     filters: list[FilterRule] = field(default_factory=list)
     filter_logic: BooleanOperator = BooleanOperator.AND
+    filter_groups: list[FilterGroup] | None = None
+    filter_group_logic: BooleanOperator = BooleanOperator.AND
     global_search: str | None = None
     global_search_columns: list[str] | None = None
     global_search_logic: BooleanOperator = BooleanOperator.AND
@@ -141,8 +150,10 @@ class QuerySpec:
     @property
     def has_filters_or_grouping(self) -> bool:
         """Return True if this query specifies any WHERE filters or GROUP BY/aggregations."""
+        has_group_rules = bool(self.filter_groups and any(bool(g.rules) for g in (self.filter_groups or [])))
+        has_any_rules = bool(self.filters) or has_group_rules
         return bool(
-            self.filters
+            has_any_rules
             or (self.global_search and self.global_search.strip())
             or self.group_by_columns
             or self.aggregations
@@ -164,6 +175,30 @@ class QuerySpec:
             )
             for f in self.filters
         )
+        if self.filter_groups:
+            grp_data = tuple(
+                (
+                    g.id,
+                    getattr(g.logic, "value", str(g.logic)),
+                    tuple(
+                        (
+                            f.column,
+                            getattr(f.operator, "value", str(f.operator)),
+                            str(f.value),
+                            str(f.value_to),
+                            f.case_sensitive,
+                            getattr(f.term_logic, "value", str(f.term_logic)),
+                        )
+                        for f in g.rules
+                    ),
+                )
+                for g in self.filter_groups
+            )
+            fg_logic = getattr(self.filter_group_logic, "value", str(self.filter_group_logic))
+            groups_repr = f"{grp_data}|{fg_logic}"
+        else:
+            groups_repr = "none"
+
         grp_repr = tuple(self.group_by_columns or [])
         agg_repr = tuple(
             (a.column, getattr(a.func, "value", str(a.func)), a.alias)
@@ -172,7 +207,7 @@ class QuerySpec:
         gs_cols = tuple(self.global_search_columns or [])
         f_logic = getattr(self.filter_logic, "value", str(self.filter_logic))
         gs_logic = getattr(self.global_search_logic, "value", str(self.global_search_logic))
-        return f"{f_repr}|{f_logic}|{self.global_search}|{gs_logic}|{gs_cols}|{grp_repr}|{agg_repr}"
+        return f"{f_repr}|{f_logic}|{groups_repr}|{self.global_search}|{gs_logic}|{gs_cols}|{grp_repr}|{agg_repr}"
 
     def get_base_query_fingerprint(self) -> str:
         """Deterministic fingerprint representing the base query result set.

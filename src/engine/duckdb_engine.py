@@ -85,6 +85,12 @@ class DuckDBEngine(IQueryEngine):
         msg = str(e).lower()
         return "parallel scanner does not support null_padding" in msg or "disable the parallel csv reader with parallel=false" in msg
 
+    def _is_missing_parquet_cache_error(self, e: Exception) -> bool:
+        msg = str(e).lower()
+        return ("no files found that match the pattern" in msg and "parquet" in msg) or (
+            "io error" in msg and ".parquet" in msg
+        )
+
     def _fallback_csv_to_sequential_if_needed(self, e: Exception) -> bool:
         if not self._is_parallel_csv_conflict_error(e):
             return False
@@ -105,12 +111,28 @@ class DuckDBEngine(IQueryEngine):
         )
         return True
 
+    def _fallback_missing_parquet_cache_if_needed(self, e: Exception) -> bool:
+        if not self._is_missing_parquet_cache_error(e):
+            return False
+        if not self.current_dataset_path:
+            return False
+        logger.warning(
+            "Cache Parquet non più accessibile su disco (%s): fallback automatico a sorgente originale %s",
+            e,
+            self.current_dataset_path,
+        )
+        self.clear_query_cache()
+        self.connect_dataset(self.current_dataset_path)
+        return True
+
     def _execute_sql(self, sql: str) -> duckdb.DuckDBPyConnection:
-        """Execute SQL with transparent fallback to sequential CSV reader if parallel conflict occurs."""
+        """Execute SQL with transparent fallback to sequential CSV reader or original dataset source."""
         try:
             return self.conn.execute(sql)
         except Exception as e:
             if self._fallback_csv_to_sequential_if_needed(e):
+                return self.conn.execute(sql)
+            if self._fallback_missing_parquet_cache_if_needed(e):
                 return self.conn.execute(sql)
             raise
 
@@ -128,18 +150,22 @@ class DuckDBEngine(IQueryEngine):
 
 
     def has_active_view(self) -> bool:
-        """Check if current_dataset table/view exists in DuckDB catalog."""
+        """Check if current_dataset table/view exists in DuckDB catalog and is actively queryable."""
         try:
             res = self.conn.execute(
                 "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
                 [self.current_view_name],
             ).fetchone()
-            return res is not None
+            if not res:
+                return False
+            # Probe underlying files to ensure physical existence
+            self.conn.execute(f"SELECT 1 FROM {self.current_view_name} LIMIT 0")
+            return True
         except Exception:
             return False
 
     def ensure_view_exists(self) -> None:
-        """Ensure current_dataset view exists, recreating it if necessary."""
+        """Ensure current_dataset view exists and is queryable, recreating or falling back if necessary."""
         if self.current_sql_source is None:
             if self.current_schema and self.current_schema.source_format == "xml":
                 raise RuntimeError(
@@ -160,6 +186,12 @@ class DuckDBEngine(IQueryEngine):
         if self.has_active_view():
             return
 
+        # If view does not exist or physical files are missing, attempt reconnect to original source
+        if self.current_dataset_path:
+            self.connect_dataset(self.current_dataset_path)
+            if self.has_active_view():
+                return
+
         if self.current_sql_source:
             self.conn.execute(
                 f"CREATE OR REPLACE VIEW {self.current_view_name} AS SELECT * FROM {self.current_sql_source}"
@@ -177,6 +209,8 @@ class DuckDBEngine(IQueryEngine):
         if hasattr(self, "conn") and self.conn:
             with contextlib.suppress(Exception):
                 self.conn.execute(f"DROP TABLE IF EXISTS {self._active_query_cache_table}")
+        import gc
+        gc.collect()
 
     def connect_dataset(self, path: str) -> DatasetSchema:
         """

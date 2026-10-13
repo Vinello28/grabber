@@ -13,6 +13,7 @@ import streamlit as st
 from src.core.models import (
     BooleanOperator,
     DatasetSchema,
+    FilterGroup,
     FilterRule,
     QuerySpec,
 )
@@ -28,6 +29,8 @@ def render_export_panel(
     global_search_cols: list[str] | None,
     filter_logic: BooleanOperator = BooleanOperator.AND,
     global_search_logic: BooleanOperator = BooleanOperator.AND,
+    filter_groups: list[FilterGroup] | None = None,
+    filter_group_logic: BooleanOperator = BooleanOperator.AND,
 ):
 
     """Render export modal/section for filtered dataset."""
@@ -38,6 +41,8 @@ def render_export_panel(
     spec = QuerySpec(
         filters=filters,
         filter_logic=filter_logic,
+        filter_groups=filter_groups,
+        filter_group_logic=filter_group_logic,
         global_search=global_search,
         global_search_columns=global_search_cols,
         global_search_logic=global_search_logic,

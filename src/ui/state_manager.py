@@ -5,6 +5,8 @@ Handles cleanup and synchronization of session state when switching datasets.
 
 from __future__ import annotations
 
+import gc
+
 import streamlit as st
 
 # List of explicit keys that depend on dataset schema or column names
@@ -20,6 +22,11 @@ DATASET_DEPENDENT_KEYS = [
     "global_search_cols_val",
     "multiselect_global_search_cols",
     "filter_entries",
+    "filter_groups_state",
+    "filter_groups_comb_logic",
+    "radio_filter_groups_comb_logic",
+    "filter_comb_logic_val",
+    "radio_filter_comb_logic",
     "active_filters",
     "_prev_filter_signature",
     "agg_group_by_cols",
@@ -53,6 +60,10 @@ DYNAMIC_WIDGET_PREFIXES = (
     "val_multi_",
     "val_single_",
     "del_btn_",
+    "radio_grp_logic_",
+    "term_logic_",
+    "del_grp_btn_",
+    "add_cond_btn_",
 )
 
 
@@ -70,3 +81,6 @@ def reset_dataset_ui_state():
     st.session_state["filter_entries"] = []
     st.session_state["active_filters"] = []
     st.session_state["current_page"] = 1
+
+    # Reclaim deallocated heap memory
+    gc.collect()

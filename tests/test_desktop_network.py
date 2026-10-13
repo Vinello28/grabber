@@ -79,6 +79,7 @@ def test_build_flag_options_configuration():
     assert flags["server.headless"] is True
     assert flags["browser.gatherUsageStats"] is False
     assert flags["global.developmentMode"] is False
+    assert flags["server.fileWatcherType"] == "none"
 
 
 class _MockHealthHandler(http.server.BaseHTTPRequestHandler):

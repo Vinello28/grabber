@@ -210,3 +210,37 @@
 - **Rule**:
   1. Ogni volta che si completano modifiche a feature visibili, logica di engine, componenti UI o bugfix in un'applicazione con bundle desktop locale, non considerare il task concluso finché non viene ricompilato l'eseguibile (`build_executable.py`).
   2. Verificare sempre la presenza fisica dei file aggiornati dentro il bundle (`Contents/Resources/src/...`) e testare l'avvio del binario compilato.
+
+## DuckDB View Catalog Blindness & Multi-Tier Parquet Cache Fallback
+- `information_schema.tables` di DuckDB restituisce `True` per qualsiasi vista SQL registrata nel catalogo, anche quando i file Parquet fisici sottostanti sono stati eliminati da disco o dalla cache.
+- Se il codice si fida solo dell'esistenza nel catalogo, la prima query a valle solleva `duckdb.IOException: No files found that match the pattern` mandando in crash l'applicazione.
+- **Rule**:
+  1. Mai fidarsi del solo `SELECT 1 FROM information_schema.tables`: eseguire sempre una verifica attiva e leggera (`SELECT 1 FROM current_dataset LIMIT 0`) per verificare che i file fisici esistano e siano leggibili.
+  2. Implementare fallback automatico su 3 livelli: se la scansione della vista Parquet fallisce, intercettare `IOException` e ricollegare immediatamente il motore alla sorgente originaria del dataset (`connect_dataset(current_dataset_path)`), ripristinando in modo trasparente la scansione streaming da CSV senza interruzioni per l'utente.
+  3. Quando la cache viene svuotata dall'interfaccia utente, invocare esplicitamente il ricollegamento del dataset attivo, aggiornare `st.session_state["schema"]` ed eseguire un rerun globale dell'applicazione.
+
+## Nested Filter Groups & Boolean Logic UX (Notion / Airtable Model)
+- Un selettore booleano globale unico `AND` / `OR` è cognitivamente rigido e distrugge le query analitiche composte: trasforma `(Anno = 2024) AND (Regione = Lazio OR Regione = Lombardia)` in un `OR` globale indifferenziato.
+- Inoltre, impostare il default su `AND` per termini testuali separati da virgola (es. `Roma, Milano`) causa il fallimento della query (nessuna cella singola contiene contemporaneamente entrambe le città), generando confusione nell'utente.
+- **Rule**:
+  1. Strutturare i filtri dinamici in gruppi isolati (`FilterGroup`): ciascun gruppo gestisce la propria congiunzione interna (`AND` / `OR`), e i gruppi sono combinati tra loro tramite un operatore inter-gruppo con connettori visivi distinti.
+  2. Per i filtri di testo a più termini (separati da virgola), impostare come default la logica `OR` ("Almeno uno") per elenchi di valori alternativi.
+  3. Esporre sempre un'anteprima in linguaggio naturale in tempo reale (`build_human_readable_filter_summary`), rendendo evidente all'utente l'esatto criterio SQL applicato.
+
+## PyInstaller Bytecode Optimization (`optimize=1`)
+- In PyInstaller, `optimize=0` (default) compila i file `.pyc` con il set completo di istruzioni di asserzione di debug.
+- L'uso di `optimize=2` (`-OO`) è pericoloso in quanto rimuove indiscriminatamente tutte le docstring (`__doc__`), mandando in crash librerie (come Streamlit, Pydantic, Click) che si basano su `__doc__` e introspezione per funzionare.
+- **Rule**: Usare sempre `optimize=1` (`-O`) in `Analysis(...)`: rimuove le asserzioni di debug dal PYZ senza alterare le docstring o l'introspezione a runtime.
+
+## Streamlit File Watcher in Desktop Standalone Bundles
+- Il File Watcher di Streamlit monitora costantemente con thread in background (`watchdog` / `os.stat`) i file sorgente Python per il live-reload in fase di sviluppo.
+- In un eseguibile standalone desktop (.app / .exe), i file sorgente sono congelati e immutabili. Mantenere il watcher attivo spreca cicli di CPU e memoria heap per tracciare file che non cambieranno mai.
+- **Rule**:
+  1. Disabilitare esplicitamente il file watcher negli eseguibili standalone impostando `"server.fileWatcherType": "none"` in `build_flag_options` (`desktop_entrypoint.py`).
+  2. Mantenere il comportamento predefinito con live reload nel launcher da riga di comando (`run.py`) per preservare l'esperienza di sviluppo.
+
+## Explicit Heap Memory Reclamation (`gc.collect()`) on Dataset Lifecycle
+- Quando si alternano dataset di grandi dimensioni o si svuota la cache dei risultati, Python e il suo allocatore (pymalloc) possono trattenere pagine di heap e riferimenti ciclici a tabelle Arrow o dizionari di sessione deallocati.
+- **Rule**: Invocare sistematicamente `gc.collect()` nei punti critici del ciclo di vita: al termine di `reset_dataset_ui_state()`, in `clear_query_cache()` e durante lo svuotamento manuale della cache in `render_cache_controls()`.
+
+

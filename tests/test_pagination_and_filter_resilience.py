@@ -28,12 +28,14 @@ def test_render_filter_battery_empty_schema():
     ]
 
     from src.core.models import BooleanOperator
-    filters, search, search_cols, filter_logic, global_search_logic = render_filter_battery(empty_schema, engine)
+    filters, search, search_cols, filter_logic, global_search_logic, filter_groups, filter_group_logic = render_filter_battery(empty_schema, engine)
     assert filters == []
     assert search is None
     assert search_cols is None
     assert filter_logic == BooleanOperator.AND
     assert global_search_logic == BooleanOperator.AND
+    assert filter_groups == []
+    assert filter_group_logic == BooleanOperator.AND
 
 
 def test_lazy_column_evaluation_resilience():

@@ -107,34 +107,68 @@ class QueryBuilder:
                         ]
                         global_search_pred = f"({' OR '.join(col_predicates)})"
 
-        # 2. Dynamic Column Filters
+        # 2. Dynamic Column Filters / Filter Groups
         col_type_map = {c.name: c for c in schema_columns} if schema_columns else {}
-        filter_preds: list[str] = []
-
-        for f in spec.filters:
-            col_sql = cls.quote_ident(f.column)
-            meta = col_type_map.get(f.column)
-            is_num = meta.is_numeric() if meta else False
-
-            pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
-            if pred:
-                filter_preds.append(pred)
-
-        filter_logic_op = (
-            spec.filter_logic.value
-            if isinstance(spec.filter_logic, BooleanOperator)
-            else str(spec.filter_logic)
-        )
-
         filters_combined: str | None = None
-        if filter_preds:
-            if len(filter_preds) == 1:
-                filters_combined = filter_preds[0]
-            else:
-                if filter_logic_op == "OR":
-                    filters_combined = f"({' OR '.join(filter_preds)})"
+
+        if spec.filter_groups and len(spec.filter_groups) > 0:
+            compiled_groups: list[str] = []
+            for grp in spec.filter_groups:
+                grp_preds: list[str] = []
+                for f in grp.rules:
+                    col_sql = cls.quote_ident(f.column)
+                    meta = col_type_map.get(f.column)
+                    is_num = meta.is_numeric() if meta else False
+                    pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
+                    if pred:
+                        grp_preds.append(pred)
+                if grp_preds:
+                    grp_logic_op = (
+                        grp.logic.value
+                        if isinstance(grp.logic, BooleanOperator)
+                        else str(grp.logic)
+                    )
+                    if len(grp_preds) == 1:
+                        compiled_groups.append(grp_preds[0])
+                    else:
+                        join_grp = f" {grp_logic_op} "
+                        compiled_groups.append(f"({join_grp.join(grp_preds)})")
+
+            if compiled_groups:
+                fg_logic_op = (
+                    spec.filter_group_logic.value
+                    if isinstance(spec.filter_group_logic, BooleanOperator)
+                    else str(spec.filter_group_logic)
+                )
+                if len(compiled_groups) == 1:
+                    filters_combined = compiled_groups[0]
                 else:
-                    filters_combined = " AND ".join(filter_preds)
+                    join_fg = f" {fg_logic_op} "
+                    filters_combined = f"({join_fg.join(compiled_groups)})"
+
+        elif spec.filters:
+            filter_preds: list[str] = []
+            for f in spec.filters:
+                col_sql = cls.quote_ident(f.column)
+                meta = col_type_map.get(f.column)
+                is_num = meta.is_numeric() if meta else False
+                pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
+                if pred:
+                    filter_preds.append(pred)
+
+            filter_logic_op = (
+                spec.filter_logic.value
+                if isinstance(spec.filter_logic, BooleanOperator)
+                else str(spec.filter_logic)
+            )
+            if filter_preds:
+                if len(filter_preds) == 1:
+                    filters_combined = filter_preds[0]
+                else:
+                    if filter_logic_op == "OR":
+                        filters_combined = f"({' OR '.join(filter_preds)})"
+                    else:
+                        filters_combined = " AND ".join(filter_preds)
 
         if global_search_pred and filters_combined:
             return f"WHERE {global_search_pred} AND {filters_combined}"
@@ -144,6 +178,114 @@ class QueryBuilder:
             return f"WHERE {filters_combined}"
         else:
             return ""
+
+    @classmethod
+    def build_human_readable_filter_summary(cls, spec: QuerySpec) -> str | None:
+        """Generate a clear, human-readable Italian natural language explanation of active filters."""
+        parts: list[str] = []
+
+        if spec.global_search and spec.global_search.strip():
+            gs_tokens = cls.parse_search_tokens(spec.global_search.strip())
+            gs_logic = "E" if spec.global_search_logic == BooleanOperator.AND else "O"
+            if len(gs_tokens) > 1:
+                quoted_gs = [f'"{t}"' for t in gs_tokens]
+                joined_gs = f" {gs_logic} ".join(quoted_gs)
+                gs_summary = f"Ricerca rapida [{joined_gs}]"
+            else:
+                clean_gs = spec.global_search.strip()
+                gs_summary = f'Ricerca rapida "{clean_gs}"'
+            parts.append(gs_summary)
+
+        def rule_to_str(f: FilterRule) -> str:
+            col = f.column
+            val = str(f.value).strip() if f.value is not None else ""
+            if f.operator == FilterOperator.EQUALS:
+                return f'{col} = "{val}"'
+            if f.operator == FilterOperator.NOT_EQUALS:
+                return f'{col} ≠ "{val}"'
+            if f.operator == FilterOperator.CONTAINS:
+                tokens = cls.parse_search_tokens(val)
+                term_op = "O" if f.term_logic == BooleanOperator.OR else "E"
+                if len(tokens) > 1:
+                    quoted_t = [f'"{t}"' for t in tokens]
+                    joined_t = f" {term_op} ".join(quoted_t)
+                    return f"{col} contiene ({joined_t})"
+                return f'{col} contiene "{val}"'
+            if f.operator == FilterOperator.NOT_CONTAINS:
+                tokens = cls.parse_search_tokens(val)
+                term_op = "O" if f.term_logic == BooleanOperator.OR else "E"
+                if len(tokens) > 1:
+                    quoted_t = [f'"{t}"' for t in tokens]
+                    joined_t = f" {term_op} ".join(quoted_t)
+                    return f"{col} non contiene ({joined_t})"
+                return f'{col} non contiene "{val}"'
+            if f.operator == FilterOperator.STARTS_WITH:
+                return f'{col} inizia con "{val}"'
+            if f.operator == FilterOperator.ENDS_WITH:
+                return f'{col} finisce con "{val}"'
+            if f.operator == FilterOperator.BETWEEN:
+                return f"{col} tra {val} e {f.value_to}"
+            if f.operator == FilterOperator.GT:
+                return f"{col} > {val}"
+            if f.operator == FilterOperator.GTE:
+                return f"{col} ≥ {val}"
+            if f.operator == FilterOperator.LT:
+                return f"{col} < {val}"
+            if f.operator == FilterOperator.LTE:
+                return f"{col} ≤ {val}"
+            if f.operator == FilterOperator.IN_LIST:
+                items = val if isinstance(f.value, (list, tuple)) else [val]
+                joined_items = ", ".join(str(x) for x in items)
+                return f"{col} in [{joined_items}]"
+            if f.operator == FilterOperator.NOT_IN_LIST:
+                items = val if isinstance(f.value, (list, tuple)) else [val]
+                joined_items = ", ".join(str(x) for x in items)
+                return f"{col} non in [{joined_items}]"
+            if f.operator == FilterOperator.IS_NULL:
+                return f"{col} è vuoto"
+            if f.operator == FilterOperator.IS_NOT_NULL:
+                return f"{col} non è vuoto"
+            if f.operator == FilterOperator.REGEX:
+                return f"{col} corrisponde a regex /{val}/"
+            return f"{col} {f.operator.value} {val}"
+
+        filters_summary: str | None = None
+        if spec.filter_groups and len(spec.filter_groups) > 0:
+            group_summaries: list[str] = []
+            for grp in spec.filter_groups:
+                rule_summaries = [
+                    rule_to_str(r)
+                    for r in grp.rules
+                    if r.value is not None or r.operator in (FilterOperator.IS_NULL, FilterOperator.IS_NOT_NULL)
+                ]
+                if rule_summaries:
+                    grp_op = " E " if grp.logic == BooleanOperator.AND else " O "
+                    group_summaries.append(
+                        rule_summaries[0] if len(rule_summaries) == 1 else f"({grp_op.join(rule_summaries)})"
+                    )
+            if group_summaries:
+                fg_op = " E " if spec.filter_group_logic == BooleanOperator.AND else " OPPURE "
+                filters_summary = (
+                    group_summaries[0] if len(group_summaries) == 1 else fg_op.join(group_summaries)
+                )
+        elif spec.filters:
+            rule_summaries = [
+                rule_to_str(r)
+                for r in spec.filters
+                if r.value is not None or r.operator in (FilterOperator.IS_NULL, FilterOperator.IS_NOT_NULL)
+            ]
+            if rule_summaries:
+                f_op = " E " if spec.filter_logic == BooleanOperator.AND else " O "
+                filters_summary = (
+                    rule_summaries[0] if len(rule_summaries) == 1 else f"({f_op.join(rule_summaries)})"
+                )
+
+        if filters_summary:
+            parts.append(filters_summary)
+
+        if not parts:
+            return None
+        return " E ".join(parts)
 
     @classmethod
     def _build_filter_predicate(

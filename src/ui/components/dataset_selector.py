@@ -158,7 +158,8 @@ def render_dataset_selector(engine: DuckDBEngine) -> DatasetSchema | None:
                     if st.button("🗑️ Rimuovi cache di questo CSV", key="btn_remove_csv_cache", use_container_width=True):
                         import shutil
                         shutil.rmtree(cache_path, ignore_errors=True)
-                        engine.connect_dataset(active_schema.source_path)
+                        new_schema = engine.connect_dataset(active_schema.source_path)
+                        st.session_state["schema"] = new_schema
                         st.sidebar.info("Cache rimossa. Il dataset è tornato in lettura diretta da CSV.")
                         st.rerun()
 

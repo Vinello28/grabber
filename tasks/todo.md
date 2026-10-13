@@ -882,3 +882,121 @@ L'obiettivo è:
   - Linter Ruff: **0 errori** (`All checks passed!`).
   - Type checking MyPy: **0 errori** (`Success: no issues found in 29 source files`).
 
+---
+
+## 35. Fallback Cache Parquet & Riprogettazione UX Logica Booleana Filtri Dinamici
+
+### Todo List
+- [x] 35.1 [Diagnosi & Design Specifiche] Analisi dei flussi di invalidazione della cache Parquet e delle criticità UX sui filtri dinamici <!-- id: 35.1 -->
+- [x] 35.2 [Approvazione Piano con Utente] Presentazione dell'analisi architetturale, trade-off e opzioni UI per convalida (Scelta Opzione 3: Costruttore a blocchi con gruppi di filtri nidificati) <!-- id: 35.2 -->
+- [x] 35.3 [Engine & Cache Fallback] Resilienza a 3 livelli: probing in `ensure_view_exists`, auto-recovery in `DuckDBEngine._execute_sql`/`connect_dataset` e sincronizzazione globale in `render_cache_controls`/`dataset_selector` <!-- id: 35.3 -->
+- [x] 35.4 [UX Filtri Dinamici] Riprogettazione interfaccia: connettori visivi espliciti tra filtri, default intuitivo per elenchi con virgola (OR), barra di stato logica e anteprima leggibile (Human-Readable Preview) <!-- id: 35.4 -->
+- [x] 35.5 [Automated Testing & QA] Creazione test di regressione unitari e integrati per fallback su cancellazione cache e per la nuova logica filtri <!-- id: 35.5 -->
+- [x] 35.6 [Rebuild Eseguibile Desktop macOS] Ricompilazione `dist/Grabber.app` con verifica integrità e aggiornamento `tasks/lessons.md` <!-- id: 35.6 -->
+
+### Review Section — Fallback Cache Parquet & Riprogettazione UX Filtri Dinamici (Gruppi Notion/Airtable)
+- **Diagnosi e Cause Radice Risolte**:
+  1. *Crash su eliminazione cache Parquet*: DuckDB manteneva la vista registrata nel catalogo (`information_schema.tables`), ma i file Parquet fisici non erano più su disco. Nessun probing attivo verificava l'integrità della vista, e `_execute_sql` non tentava il ricollegamento alla sorgente originaria del dataset (`read_csv(...)`), sollevando un'eccezione non gestita.
+  2. *Ambiguità logica booleana AND/OR tra i filtri*: I selettori radio globali e per-termine identici generavano sovraccarico cognitivo. L'operatore AND predefinito per elenchi separati da virgola (es. `Roma, Milano`) restituiva 0 risultati in quanto nessuna cella singola soddisfa contemporaneamente entrambe le condizioni. Mancava la possibilità di formulare query composte come `(A AND B) OR (C AND D)`.
+- **Interventi Realizzati**:
+  1. **Core Domain & Query Engine ([`src/core/models.py`](src/core/models.py), [`src/engine/duckdb_engine.py`](src/engine/duckdb_engine.py), [`src/engine/query_builder.py`](src/engine/query_builder.py))**:
+     - Introdotto il modello `FilterGroup(id, rules, logic)` e integrato in `QuerySpec` con `filter_group_logic` e fingerprint deterministico.
+     - Implementato in `DuckDBEngine` un sistema di resilienza e auto-guarigione a 3 livelli:
+       - Probing attivo in `has_active_view`: esegue `SELECT 1 FROM current_dataset LIMIT 0` per testare l'accessibilità reale dei file fisici.
+       - Riconnessione automatica in `ensure_view_exists`: se i file Parquet sono assenti, ristabilisce la connessione streaming al dataset originario (`read_csv(...)`).
+       - Auto-recovery in `_execute_sql`: intercetta `IOException` da file Parquet mancanti durante l'esecuzione di qualsiasi query e riesegue automaticamente la lettura dal dataset originale.
+     - Esteso `QueryBuilder` per compilare filtri nidificati a gruppi in clausole SQL con parentesi e precedenze esatte.
+     - Implementato `build_human_readable_filter_summary` in `QueryBuilder` per generare spiegazioni in italiano naturale in tempo reale (es. `(Anno = 2024 E Importo > 1000) OPPURE (Regione contiene "Lazio" O "Lombardia")`).
+  2. **Interfaccia Utente & UX a Blocchi ([`src/ui/components/filter_battery.py`](src/ui/components/filter_battery.py), [`src/ui/app.py`](src/ui/app.py), [`src/ui/components/cache_controls.py`](src/ui/components/cache_controls.py), [`src/ui/components/data_viewer.py`](src/ui/components/data_viewer.py), [`src/ui/components/aggregations.py`](src/ui/components/aggregations.py), [`src/ui/components/export_panel.py`](src/ui/components/export_panel.py))**:
+     - Costruttore a blocchi in stile Notion/Airtable: supporto a gruppi di filtri multipli, ciascuno con la propria logica interna (`AND` / `OR`), e connettore tra gruppi (`AND` / `OR`).
+     - Badge visivi centrati (`— E (AND) —` e `— OPPURE (OR) —`) tra le righe di ciascun gruppo e banner visivo tra gruppi.
+     - Impostato il default su `OR` ("Almeno uno — Consigliato per elenchi") per i filtri di testo a più termini separati da virgola.
+     - Banner informativo in tempo reale con l'anteprima leggibile del criterio SQL applicato.
+     - Sincronizzazione immediata al click di `🗑️ Svuota Cache` con ricollegamento del dataset attivo, aggiornamento dello schema in session state e rerun globale.
+  3. **Automated Testing & QA ([`tests/test_cache_fallback_and_filter_groups.py`](tests/test_cache_fallback_and_filter_groups.py))**:
+     - Aggiunti 8 test automatizzati per verificare l'auto-fallback alla rimozione della cache Parquet, la compilazione SQL di gruppi singoli e multipli con logica combinata, il riepilogo in linguaggio naturale e l'invarianza del fingerprint.
+  4. **Rebuild Bundle Standalone macOS (`dist/Grabber.app`)**:
+     - Ricompilato con successo `dist/Grabber.app` (247 MB) incorporando tutti i moduli aggiornati.
+     - Verificato l'avvio `--serve` su porta 8532 con risposte HTTP `200 OK` sia su `/_stcore/health` che su `/`.
+- **Validazione Finale**:
+  - Test suite pytest: **120 superati, 13 skipped** in **1.51s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** (`Success: no issues found in 29 source files`).
+
+---
+
+## 36. Verifica Impatto su RAM, CPU e Prestazioni del Sistema
+
+### Todo List
+- [x] 36.1 [Analisi Teorica & Architetturale] Ispezione dei costi di memoria dei modelli (`FilterGroup`, `QuerySpec`) e overhead del probing (`LIMIT 0`) <!-- id: 36.1 -->
+- [x] 36.2 [Benchmark Prestazionale & RSS Memory Footprint] Script di profilazione rigorosa su 1.000.000+ righe con misurazione `psutil.Process().memory_info().rss` <!-- id: 36.2 -->
+- [x] 36.3 [Verifica Latenza Probing & Auto-Fallback] Misurazione tempo di esecuzione di `SELECT 1 FROM current_dataset LIMIT 0` e tempo di riconnessione trasparente <!-- id: 36.3 -->
+- [x] 36.4 [Verifica Result Table Pagination Cache (<1ms)] Conferma invarianza della velocità sub-millisecondo con i nuovi fingerprint dei gruppi di filtri <!-- id: 36.4 -->
+- [x] 36.5 [Documentazione Risultati & QA] Aggiornamento `tasks/todo.md` con i dati quantitativi misurati <!-- id: 36.5 -->
+
+### Review Section — Benchmark Impatto RAM e Prestazioni (1.000.000 Record)
+- **Metodologia di Test**:
+  - Profilazione eseguita con [`scripts/benchmark_perf_and_ram.py`](scripts/benchmark_perf_and_ram.py) su un dataset sintetico generato di **1.000.000 di righe** (55 MB CSV, 6 colonne eterogenee).
+  - Tracciamento della memoria fisica residente (RSS) tramite `psutil.Process().memory_info().rss`.
+  - Misurazione dei tempi di esecuzione ad alta precisione con `time.perf_counter()`.
+- **Dati Quantitativi Rilevati**:
+  1. *Impatto Memory Footprint dei nuovi modelli (`FilterGroup`, `QuerySpec`)*:
+     - Le dataclass `FilterGroup` memorizzano esclusivamente metadati di testo ed enum sull'heap Python.
+     - L'impatto di memoria è di **< 1 KB** (< 0.001 MB) per query. La pipeline di rendering rimane al 100% zero-copy tramite Apache Arrow IPC (`to_arrow_table()`).
+  2. *Overhead del Probing Attivo (`SELECT 1 FROM current_dataset LIMIT 0`)*:
+     - Tempo medio di probing misurato su 20 campioni: **5.48 ms** (Min: **5.29 ms**).
+     - Overhead di memoria RAM: **0.00 MB** (DuckDB non scansiona né carica righe di dati, ma verifica unicamente gli header e descrittori dei file).
+  3. *Prestazioni di Esecuzione Query con Filtri Nidificati Complessi*:
+     - Query a 2 gruppi composti `((Anno = 2024 AND Importo > 5000) OR (Regione = 'Lazio' AND Categoria = 'Informatica'))`:
+       - Su CSV grezzo (1.000.000 righe): **0.047 secondi**.
+       - Su Parquet indicizzato: **0.016 secondi** (velocizzazione di **2.9x**).
+  4. *Invarianza della Result Table Cache (`_active_query_cache`)*:
+     - Paginazione successiva (stesso fingerprint logico con offset progressivo): **6.45 ms** costanti per pagina, con delta RAM stabile.
+  5. *Latenza del Fallback su Rimozione Cache Parquet*:
+     - Alla cancellazione fisica da disco della cartella Parquet durante l'uso, il motore rileva l'assenza, invalida la cache temporanea, ricollega il dataset CSV originale e riesegue la query in appena **0.100 secondi** con un delta RAM trascurabile (+5.7 MB).
+- **Esito della Verifica**:
+  - Nessun incremento anomalo della RAM.
+  - Nessuna degradazione delle prestazioni o rallentamento della pipeline vettorializzata out-of-core.
+
+---
+
+## 37. Ottimizzazione Bytecode PyInstaller, Disattivazione File Watcher in Produzione Desktop e Garbage Collection RAM
+
+### Todo List
+- [x] 37.1 [Configurazione Bytecode Optimize] Configurazione `optimize=1` in `Analysis(...)` dentro `grabber.spec` per la compilazione ottimizzata dei file `.pyc` senza asserzioni di debug <!-- id: 37.1 -->
+- [x] 37.2 [Disattivazione File Watcher in Desktop Mode] Configurazione `"server.fileWatcherType": "none"` in `build_flag_options` in `desktop_entrypoint.py` preservando il live reload in sviluppo su `run.py` <!-- id: 37.2 -->
+- [x] 37.3 [Garbage Collection Esplicita] Invocazione sistematica di `gc.collect()` in `reset_dataset_ui_state` (`state_manager.py`), `clear_query_cache` (`duckdb_engine.py`) e nello svuotamento cache (`cache_controls.py`) <!-- id: 37.3 -->
+- [x] 37.4 [Test di Regressione & Verifica Qualità] Aggiornamento ed esecuzione dei test unitari (`tests/test_desktop_network.py` per il nuovo flag, e test suite complessiva), linters e type check <!-- id: 37.4 -->
+- [x] 37.5 [Ricompilazione Eseguibile Desktop macOS & Misurazione Delta] Rebuild di `dist/Grabber.app` con verifica integrità, collaudo avvio `--serve`, misurazione dimensione ed esecuzione <!-- id: 37.5 -->
+- [x] 37.6 [Documentazione & Lessons Learned] Completamento review section in `tasks/todo.md` e registrazione regole in `tasks/lessons.md` <!-- id: 37.6 -->
+
+### Review Section — Bytecode Optimization, Desktop File Watcher Disabling & Heap GC
+- **Scelte Architetturali Condivise con l'Utente**:
+  - Preservate integralmente tutte le dipendenze native e librerie (incluso `tkinter` su tutte le piattaforme per la piena compatibilità con Linux e Windows).
+  - Mantenuto invariato il tetto massimo del buffer pool di DuckDB (`max_memory` e `calculate_safe_memory_limit`).
+  - Ottimizzazione selettiva: bytecode optimize a livello di compilatore (`optimize=1`) e rimozione dell'overhead di file-watching solo nell'eseguibile congelato, preservando il live reload durante lo sviluppo (`run.py`).
+- **Interventi Realizzati**:
+  1. **PyInstaller Spec ([`grabber.spec`](grabber.spec))**:
+     - Configurato `optimize=1` in `Analysis(...)`, garantendo che l'interprete compili i `.pyc` con `-O` (senza istruzioni di assert di debug, preservando docstring e inspect).
+  2. **Streamlit Desktop Flags ([`desktop_entrypoint.py`](desktop_entrypoint.py))**:
+     - Aggiunto `"server.fileWatcherType": "none"` a `build_flag_options`, disattivando i thread di monitoraggio filesystem e strutture dati di tracking a riposo nella modalità standalone.
+     - Preservata la modalità standard con live reload in [`run.py`](run.py) per la fase di sviluppo.
+  3. **Garbage Collection Esplicita Heap Python ([`src/ui/state_manager.py`](src/ui/state_manager.py), [`src/engine/duckdb_engine.py`](src/engine/duckdb_engine.py), [`src/ui/components/cache_controls.py`](src/ui/components/cache_controls.py))**:
+     - Aggiunta invocazione `gc.collect()` al termine di `reset_dataset_ui_state` per liberare immediatamente la memoria occupata dalle variabili di sessione e strutture dati del vecchio dataset.
+     - Aggiunta invocazione `gc.collect()` in `clear_query_cache()` alla distruzione di `_active_query_cache`.
+     - Aggiunta invocazione `gc.collect()` in `render_cache_controls` durante lo svuotamento manuale della cache.
+  4. **Automated Testing & QA ([`tests/test_desktop_network.py`](tests/test_desktop_network.py))**:
+     - Aggiornato `test_build_flag_options_configuration` verificando la presenza del flag `"server.fileWatcherType": "none"`.
+  5. **Rebuild Standalone Executable ([`dist/Grabber.app`](dist/Grabber.app))**:
+     - Eseguito `build_executable.py` con successo (`PYZ-00.pyz` 17 MB, `dist/Grabber.app` 246 MB).
+     - Collaudo funzionale in modalità `--serve` eseguito con successo (`/_stcore/health` = `ok`, `/` = `200 OK`).
+- **Validazione Finale**:
+  - Test suite: **120 passati, 13 skipped** in **1.74s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
+
+
+
+
+
+

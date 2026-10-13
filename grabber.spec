@@ -66,6 +66,7 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
+    optimize=1,
 )
 
 # Strip pyarrow Flight RPC binaries (unused in local engine, saves ~23MB) and C++ header/test files
