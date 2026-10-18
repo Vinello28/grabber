@@ -243,4 +243,26 @@
 - Quando si alternano dataset di grandi dimensioni o si svuota la cache dei risultati, Python e il suo allocatore (pymalloc) possono trattenere pagine di heap e riferimenti ciclici a tabelle Arrow o dizionari di sessione deallocati.
 - **Rule**: Invocare sistematicamente `gc.collect()` nei punti critici del ciclo di vita: al termine di `reset_dataset_ui_state()`, in `clear_query_cache()` e durante lo svuotamento manuale della cache in `render_cache_controls()`.
 
+## Dataclass Transformation Safety (`dataclasses.replace`)
+- Ricostruire istanze di dataclass per derivazione (es. `count_spec`, `export_spec`, `base_spec`) instanziando a mano i campi (`QuerySpec(filters=spec.filters, ...)`) introduce fragilità gravissime: ogni volta che il modello viene esteso con nuovi attributi (es. `filter_groups`, `filter_group_logic`), le istanze derivate perdono silenziosamente i nuovi dati.
+- **Rule**: Usare sempre `dataclasses.replace(spec, limit=None, offset=None)` per generare specifiche di query derivate, garantendo che tutti i campi presenti e futuri vengano preservati intatti.
+
+## Columnar Engine Zonemap Pushdown on Native Numeric Types
+- Avvolgere colonne numeriche con funzioni di cast (es. `TRY_CAST("col" AS DOUBLE)`) nei predicati SQL (`=`, `!=`, `>`, `<`, `BETWEEN`) impedisce al motore colonnare (DuckDB / Parquet) di sfruttare le statistiche min/max dei file Parquet (zonemaps), forzando una scansione e conversione esaustiva riga per riga di tutti i row group.
+- **Rule**:
+  1. Esporre un helper di cardinalità e tipo nativo (`ColumnMeta.has_native_numeric_type()`).
+  2. Emettere la colonna nuda (`"col" > 100.0`) quando il tipo di archiviazione DuckDB è già numerico nativo (`BIGINT`, `INTEGER`, `DOUBLE`, `FLOAT`, `DECIMAL`), preservando il pushdown completo dei predicati a livello di file Parquet.
+  3. Mantenere `TRY_CAST` esclusivamente per colonne `VARCHAR` per preservare la tolleranza su dataset CSV grezzi e XML.
+
+## Selective Materialization of Result Tables on Unfiltered Queries
+- Materializzare l'intero dataset in una tabella temporanea (`CREATE TEMP TABLE _active_query_cache AS SELECT * FROM ...`) quando l'utente naviga un dataset senza filtri, senza ricerca, senza raggruppamento e senza ordinamento provoca una duplicazione e scansione I/O di decine di gigabyte del tutto inutile solo per mostrare le prime 50 righe.
+- **Rule**: Se `not spec.has_filters_or_grouping and not spec.order_by`, eseguire lo slice paginato direttamente sulla vista con `LIMIT / OFFSET`, registrando comunque il fingerprint e il conteggio totale ed evitando la materializzazione della tabella temporanea.
+
+## Zero-Copy PyArrow and Fetchall in Schema Inspection
+- L'uso di `.fetchdf().iterrows()` durante l'ispezione della struttura dello schema (`DESCRIBE`) e per il campionamento righe converte i vettori C++ di DuckDB in oggetti Pandas DataFrame e tuple Python per ogni riga, sprecando tempo e memoria heap durante il caricamento del dataset.
+- **Rule**:
+  1. Usare `cursor.fetchall()` per query su metadati come `DESCRIBE`, iterando su tuple native C `(col_name, col_type, ...)`.
+  2. Usare `cursor.to_arrow_table()` per il campionamento dati, estraendo campioni e cardinalità per i tipi categorici con operazioni colonnari native PyArrow (`chunk.drop_null().unique()`), eliminando il transito da Pandas.
+
+
 

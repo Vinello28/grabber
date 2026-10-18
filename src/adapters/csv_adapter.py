@@ -144,8 +144,8 @@ class CsvAdapter(IDatasetAdapter):
         if has_cache:
             safe_cache = str(cache_path.resolve()).replace("'", "''")
             sql_source = f"read_parquet('{safe_cache}/**/*.parquet', union_by_name=true)"
-            describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
-            sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+            describe_rows = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchall()
+            sample_table = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").to_arrow_table()
             count_res = duckdb_conn.execute(f"SELECT COUNT(*) FROM {sql_source}").fetchone()
             if count_res:
                 row_count_est = count_res[0]
@@ -155,29 +155,31 @@ class CsvAdapter(IDatasetAdapter):
 
             # Inspect table structure and sample rows with automatic fallback if parallel scanner fails
             try:
-                describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
-                sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+                describe_rows = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchall()
+                sample_table = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").to_arrow_table()
             except Exception as e:
                 err_msg = str(e).lower()
                 if "parallel scanner does not support null_padding" in err_msg or "disable the parallel csv reader with parallel=false" in err_msg:
                     self.parallel = False
                     sql_source = self.build_sql_source(path_or_files, delim=delim, parallel=False)
-                    describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
-                    sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+                    describe_rows = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchall()
+                    sample_table = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").to_arrow_table()
                 else:
                     raise
 
         columns: list[ColumnMeta] = []
-        for _, row in describe_df.iterrows():
-            col_name = str(row["column_name"])
-            native_type = str(row["column_type"]).upper()
+        for row in describe_rows:
+            col_name = str(row[0])
+            native_type = str(row[1]).upper()
 
-            # Determine DataType enum
-            data_type = self._classify_type(native_type, sample_df.get(col_name))
+            sample_chunk = sample_table.column(col_name) if col_name in sample_table.column_names else None
+            data_type = self._classify_type(native_type, sample_chunk)
 
             sample_vals = []
-            if col_name in sample_df:
-                sample_vals = list(sample_df[col_name].dropna().unique()[:5])
+            if sample_chunk is not None:
+                non_null = sample_chunk.drop_null()
+                if len(non_null) > 0:
+                    sample_vals = non_null.unique()[:5].to_pylist()
 
             col_meta = ColumnMeta(
                 name=col_name,
@@ -197,19 +199,21 @@ class CsvAdapter(IDatasetAdapter):
             table_identifier="csv_source",
         )
 
-    def _classify_type(self, native_type: str, sample_series: Any | None) -> DataType:
+    def _classify_type(self, native_type: str, sample_chunk: Any | None) -> DataType:
         is_interval = "INTERVAL" in native_type
-        if not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT"]):
+        if not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT", "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT", "REAL", "NUMERIC"]):
             return DataType.NUMERIC
         elif any(t in native_type for t in ["DATE", "TIME", "TIMESTAMP"]):
             return DataType.DATE
         elif "BOOL" in native_type:
             return DataType.BOOLEAN
         elif "VARCHAR" in native_type or "TEXT" in native_type or "BLOB" in native_type:
-            if sample_series is not None and len(sample_series) > 0:
-                unique_count = sample_series.nunique()
+            if sample_chunk is not None and len(sample_chunk) > 0:
+                unique_vals = sample_chunk.drop_null().unique()
+                unique_count = len(unique_vals)
+                total_count = len(sample_chunk)
                 # If low cardinality on sample (e.g. <= 30), treat as categorical
-                if 1 < unique_count <= 30 and (unique_count / len(sample_series)) < 0.2:
+                if 1 < unique_count <= 30 and (unique_count / total_count) < 0.2:
                     return DataType.CATEGORICAL
             return DataType.TEXT
         return DataType.TEXT

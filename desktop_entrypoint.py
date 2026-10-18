@@ -276,10 +276,11 @@ def run_native_window(host: str, port: int, proc: subprocess.Popen[bytes], log_p
     window = webview.create_window(APP_TITLE, html=SPLASH_HTML, width=1440, height=900, min_size=(960, 640))
 
     def show_app() -> None:
-        if wait_until_healthy(host, port, STARTUP_TIMEOUT_SECONDS, is_alive=lambda: proc.poll() is None):
-            window.load_url(f"http://{host}:{port}")
-        else:
-            window.load_html(ERROR_HTML.replace("__LOG__", html.escape(str(log_path or "n/d"))))
+        if window is not None:
+            if wait_until_healthy(host, port, STARTUP_TIMEOUT_SECONDS, is_alive=lambda: proc.poll() is None):
+                window.load_url(f"http://{host}:{port}")
+            else:
+                window.load_html(ERROR_HTML.replace("__LOG__", html.escape(str(log_path or "n/d"))))
 
     try:
         webview.start(show_app)

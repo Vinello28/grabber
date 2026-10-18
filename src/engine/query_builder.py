@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import replace
 
 from src.core.models import (
     AggregationFunc,
@@ -119,7 +120,10 @@ class QueryBuilder:
                     col_sql = cls.quote_ident(f.column)
                     meta = col_type_map.get(f.column)
                     is_num = meta.is_numeric() if meta else False
-                    pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
+                    has_native_num = meta.has_native_numeric_type() if meta else False
+                    pred = cls._build_filter_predicate(
+                        f, col_sql, is_numeric=is_num, has_native_numeric=has_native_num
+                    )
                     if pred:
                         grp_preds.append(pred)
                 if grp_preds:
@@ -152,7 +156,10 @@ class QueryBuilder:
                 col_sql = cls.quote_ident(f.column)
                 meta = col_type_map.get(f.column)
                 is_num = meta.is_numeric() if meta else False
-                pred = cls._build_filter_predicate(f, col_sql, is_numeric=is_num)
+                has_native_num = meta.has_native_numeric_type() if meta else False
+                pred = cls._build_filter_predicate(
+                    f, col_sql, is_numeric=is_num, has_native_numeric=has_native_num
+                )
                 if pred:
                     filter_preds.append(pred)
 
@@ -293,6 +300,7 @@ class QueryBuilder:
         f: FilterRule,
         col_sql: str,
         is_numeric: bool = False,
+        has_native_numeric: bool = False,
     ) -> str | None:
         """Translate a single FilterRule into an SQL condition."""
         op = f.operator
@@ -372,6 +380,8 @@ class QueryBuilder:
                 try:
                     num_val = float(str(val).replace(",", "."))
                     if math.isfinite(num_val):
+                        if has_native_numeric:
+                            return f"{col_sql} = {num_val}"
                         return f"TRY_CAST({col_sql} AS DOUBLE) = {num_val}"
                 except ValueError:
                     pass
@@ -384,6 +394,8 @@ class QueryBuilder:
                 try:
                     num_val = float(str(val).replace(",", "."))
                     if math.isfinite(num_val):
+                        if has_native_numeric:
+                            return f"{col_sql} IS DISTINCT FROM {num_val}"
                         return f"TRY_CAST({col_sql} AS DOUBLE) IS DISTINCT FROM {num_val}"
                 except ValueError:
                     pass
@@ -407,6 +419,8 @@ class QueryBuilder:
                 num_val = float(str(val).replace(",", "."))
                 if not math.isfinite(num_val):
                     return None
+                if has_native_numeric:
+                    return f"{col_sql} {op.value} {num_val}"
                 return f"TRY_CAST({col_sql} AS DOUBLE) {op.value} {num_val}"
             except ValueError:
                 return None
@@ -425,6 +439,8 @@ class QueryBuilder:
                     return None
                 if min_v > max_v:
                     min_v, max_v = max_v, min_v
+                if has_native_numeric:
+                    return f"{col_sql} BETWEEN {min_v} AND {max_v}"
                 return f"TRY_CAST({col_sql} AS DOUBLE) BETWEEN {min_v} AND {max_v}"
             except (ValueError, TypeError):
                 return None
@@ -560,15 +576,7 @@ class QueryBuilder:
         """Build query to count matching rows without fetching them."""
         where_clause = cls.build_where_clause(spec, schema_columns)
         if spec.group_by_columns or spec.aggregations:
-            count_spec = QuerySpec(
-                filters=spec.filters,
-                global_search=spec.global_search,
-                global_search_columns=spec.global_search_columns,
-                group_by_columns=spec.group_by_columns,
-                aggregations=spec.aggregations,
-                limit=None,
-                offset=None,
-            )
+            count_spec = replace(spec, limit=None, offset=None, order_by=None)
             sub = cls._build_aggregated_query(table_ref, count_spec, where_clause, include_order_by=False)
             return f"SELECT COUNT(*) FROM ({sub}) AS subquery"
         return f"SELECT COUNT(*) FROM {table_ref} {where_clause}".strip()
@@ -587,15 +595,7 @@ class QueryBuilder:
         Does not load the result into Python memory.
         """
         # Exclude limit/offset from export query unless explicitly intended
-        export_spec = QuerySpec(
-            filters=spec.filters,
-            global_search=spec.global_search,
-            global_search_columns=spec.global_search_columns,
-            selected_columns=spec.selected_columns,
-            group_by_columns=spec.group_by_columns,
-            aggregations=spec.aggregations,
-            order_by=spec.order_by,
-        )
+        export_spec = replace(spec, limit=None, offset=None)
 
         inner_select = cls.build_select_query(table_ref, export_spec, schema_columns)
         clean_out = cls.escape_str_literal(output_path)

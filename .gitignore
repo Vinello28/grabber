@@ -22,3 +22,6 @@ dist/
 # Data
 data/
 !data/.gitkeep
+
+# Dev
+docs/RUST_TAURI_V2_PLAN.md

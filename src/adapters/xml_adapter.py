@@ -205,23 +205,26 @@ class XmlAdapter(IDatasetAdapter):
             safe_cache = str(cache_path.resolve()).replace("'", "''")
             sql_source = f"read_parquet('{safe_cache}/**/*.parquet', union_by_name=true)"
             try:
-                describe_df = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchdf()
-                sample_df = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").fetchdf()
+                describe_rows = duckdb_conn.execute(f"DESCRIBE SELECT * FROM {sql_source} LIMIT 10").fetchall()
+                sample_table = duckdb_conn.execute(f"SELECT * FROM {sql_source} LIMIT 1000").to_arrow_table()
                 count_res = duckdb_conn.execute(f"SELECT COUNT(*) FROM {sql_source}").fetchone()
                 total_rows = count_res[0] if count_res else None
 
                 columns: list[ColumnMeta] = []
-                for _, row in describe_df.iterrows():
-                    col_name = str(row["column_name"])
-                    native_type = str(row["column_type"]).upper()
+                for row in describe_rows:
+                    col_name = str(row[0])
+                    native_type = str(row[1]).upper()
                     is_interval = "INTERVAL" in native_type
-                    is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                    is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT", "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT", "REAL", "NUMERIC"])
                     data_type = DataType.NUMERIC if is_num else (
                         DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
                     )
                     sample_vals = []
-                    if col_name in sample_df:
-                        sample_vals = list(sample_df[col_name].dropna().unique()[:5])
+                    if col_name in sample_table.column_names:
+                        sample_chunk = sample_table.column(col_name)
+                        non_null = sample_chunk.drop_null()
+                        if len(non_null) > 0:
+                            sample_vals = non_null.unique()[:5].to_pylist()
 
                     columns.append(
                         ColumnMeta(

@@ -72,6 +72,31 @@ class ColumnMeta:
     def is_numeric(self) -> bool:
         return self.data_type == DataType.NUMERIC
 
+    def has_native_numeric_type(self) -> bool:
+        """Return True if column has a native numeric storage type in DuckDB."""
+        if not self.is_numeric():
+            return False
+        nt = (self.native_type or "").upper()
+        if "INTERVAL" in nt:
+            return False
+        numeric_keywords = (
+            "INT",
+            "BIGINT",
+            "SMALLINT",
+            "TINYINT",
+            "HUGEINT",
+            "UBIGINT",
+            "UINTEGER",
+            "USMALLINT",
+            "UTINYINT",
+            "DOUBLE",
+            "FLOAT",
+            "REAL",
+            "DECIMAL",
+            "NUMERIC",
+        )
+        return any(kw in nt for kw in numeric_keywords)
+
     def is_text(self) -> bool:
         return self.data_type in (DataType.TEXT, DataType.CATEGORICAL)
 

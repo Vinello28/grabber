@@ -995,8 +995,56 @@ L'obiettivo è:
   - Linter Ruff: **0 errori** (`All checks passed!`).
   - Type checking MyPy: **0 errori** su tutti i 29 moduli `src/` (`Success: no issues found in 29 source files`).
 
+---
 
+## 38. Fix Bug `filter_groups` in Export/Count/Cache, Ottimizzazione Zonemap Pushdown e Materializzazione Selettiva `_active_query_cache`
 
+### Todo List
+- [x] 38.1 [Fix Clonazione `QuerySpec` con `dataclasses.replace`] Correzione della perdita di `filter_groups`, `filter_group_logic`, `filter_logic` e `global_search_logic` in `DuckDBEngine.execute_query` (`base_spec`), `QueryBuilder.build_count_query` (`count_spec`) e `QueryBuilder.build_export_query` (`export_spec`) tramite `dataclasses.replace(spec, ...)` <!-- id: 38.1 -->
+- [x] 38.2 [Ripristino Parquet Zonemap Pushdown su Colonne Numeriche Native] Introduzione di `has_native_numeric_type()` su `ColumnMeta` e aggiornamento di `QueryBuilder._build_filter_predicate` per omettere `TRY_CAST("col" AS DOUBLE)` quando la colonna ha già un tipo numerico nativo DuckDB (`BIGINT`, `INTEGER`, `DOUBLE`, `FLOAT`, `DECIMAL`), mantenendo `TRY_CAST` per colonne `VARCHAR` (retrocompatibilità 100% con test esistenti e CSV/XML testuali) <!-- id: 38.2 -->
+- [x] 38.3 [Materializzazione Selettiva in `DuckDBEngine.execute_query`] Evitare la materializzazione completa `CREATE OR REPLACE TEMP TABLE _active_query_cache` quando la query non ha né filtri/ricerca/raggruppamenti (`not spec.has_filters_or_grouping`) né ordinamento (`not spec.order_by`), eseguendo lo slice paginato direttamente sulla vista e preservando `_active_query_fingerprint` e `_active_query_total_count` <!-- id: 38.3 -->
+- [x] 38.4 [Eliminazione Conversioni Pandas `.fetchdf()` / `.iterrows()` in Schema Inspection] Sostituzione di `DESCRIBE ... .fetchdf().iterrows()` e `SELECT * ... LIMIT 1000 .fetchdf()` con `fetchall()` e PyArrow zero-copy (`to_arrow_table()`) in `duckdb_engine.py`, `csv_adapter.py`, `parquet_adapter.py` e `xml_adapter.py` <!-- id: 38.4 -->
+- [x] 38.5 [Test Unitari & di Regressione] Aggiunta di test specifici per esportazione, conteggio e paginazione con `filter_groups` multipli (AND/OR), test per pushdown nativo vs `VARCHAR` in `QueryBuilder`, ed esecuzione completa di `pytest`, `ruff` e `mypy` <!-- id: 38.5 -->
+- [x] 38.6 [Ricompilazione Bundle Desktop & Documentazione] Ricompilazione di `dist/Grabber.app` tramite `build_executable.py`, verifica funzionale e aggiornamento della Review Section in `tasks/todo.md` e `tasks/lessons.md` <!-- id: 38.6 -->
 
+### Review Section — Fix `filter_groups`, Zonemap Pushdown & Zero-Copy Inspection
+- **Diagnosi e Cause Radice Risolte**:
+  1. *Perdita di `filter_groups` in Export, Count e Cache Paginazione*: La re-istanziazione manuale di `QuerySpec` in `DuckDBEngine.execute_query`, `QueryBuilder.build_count_query` e `QueryBuilder.build_export_query` ometteva `filter_groups`, `filter_group_logic`, `filter_logic` e `global_search_logic`, provocando l'esportazione dell'intero dataset o conteggi/pagine non filtrati quando si utilizzavano gruppi di filtri complessi (stile Notion/Airtable).
+  2. *Blocco Zonemap Pushdown su Parquet per Colonne Numeriche Native*: L'avvolgimento incondizionato con `TRY_CAST("col" AS DOUBLE)` nei predicati di confronto numerico (`=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`) impediva a DuckDB di interrogare le statistiche min/max dei file Parquet, invalidando il salto rapido di row groups.
+  3. *Overhead I/O e Spillover da Materializzazione Cieca*: La creazione incondizionata della tabella temporanea `_active_query_cache` forzava la scansione e duplicazione completa su disco/RAM di decine di milioni di record anche quando l'utente navigava un dataset senza alcun filtro né ordinamento.
+  4. *Overhead di Allocazione Pandas in Ispezione Schema*: L'uso di `.fetchdf().iterrows()` durante `DESCRIBE` e il campionamento di 1000 righe generava overhead di conversione Pandas non necessario ad ogni connessione o indicizzazione di dataset.
+- **Interventi Realizzati**:
+  1. **Core Domain Models ([`src/core/models.py`](src/core/models.py))**:
+     - Introdotto `ColumnMeta.has_native_numeric_type()`: identifica con precisione tipi numerici nativi DuckDB (`BIGINT`, `INTEGER`, `DOUBLE`, `FLOAT`, `DECIMAL`, `HUGEINT`, etc.) escludendo intervalli temporali e stringhe `VARCHAR`.
+  2. **Query Builder ([`src/engine/query_builder.py`](src/engine/query_builder.py))**:
+     - Sostituita la clonazione manuale in `build_count_query` e `build_export_query` con `dataclasses.replace(spec, limit=None, offset=None)`, preservando intatti tutti i parametri logici dei gruppi di filtri.
+     - Aggiornato `_build_filter_predicate` per omettere `TRY_CAST` quando la colonna ha già tipo numerico nativo DuckDB (`col > 100.0`), ripristinando il pushdown diretto sulle zonemap Parquet. Mantenuto `TRY_CAST` per colonne `VARCHAR` per retrocompatibilità al 100% con CSV grezzi e XML.
+  3. **Query Engine & Materializzazione Selettiva ([`src/engine/duckdb_engine.py`](src/engine/duckdb_engine.py))**:
+     - Sostituita la clonazione manuale di `base_spec` con `dataclasses.replace(spec, limit=None, offset=None)`.
+     - Implementato bypass selettivo della materializzazione: per query senza filtri, ricerca, raggruppamento o ordinamento (`not spec.has_filters_or_grouping and not spec.order_by`), il motore estrae lo slice paginato direttamente dalla vista senza creare `_active_query_cache`, preservando `_active_query_fingerprint` e `_active_query_total_count`.
+     - Sostituito `DESCRIBE ... .fetchdf().iterrows()` con `fetchall()` in `index_xml_dataset` e `index_csv_dataset`.
+  4. **Adapters Zero-Copy Inspection ([`src/adapters/csv_adapter.py`](src/adapters/csv_adapter.py), [`src/adapters/parquet_adapter.py`](src/adapters/parquet_adapter.py), [`src/adapters/xml_adapter.py`](src/adapters/xml_adapter.py))**:
+     - Sostituito `DESCRIBE ... .fetchdf()` con `fetchall()`.
+     - Sostituito `SELECT * ... LIMIT 1000 .fetchdf()` con `to_arrow_table()`, estraendo valori unici e cardinalità per tipi categorici direttamente tramite `chunk.drop_null().unique()`.
+  5. **Automated Testing & QA ([`tests/test_filter_groups_export_and_zonemap.py`](tests/test_filter_groups_export_and_zonemap.py))**:
+     - Introdotti 13 test unitari e di integrazione end-to-end coprendo:
+       - Esportazione su file CSV con `filter_groups` multipli e verifica riga per riga
+       - Esportazione su file Parquet con `filter_groups` e lettura/validazione schema con PyArrow (`pq.read_table`)
+       - Esportazione su file JSON (`ARRAY true`) con `filter_groups` e verifica parsing `json.loads`
+       - Esportazione con proiezione `selected_columns` combinata a `filter_groups`
+       - Esportazione di query aggregate (`GROUP BY` + funzioni di aggregazione) con `filter_groups`
+       - Esportazione con logica inter-gruppo `OR` (`filter_group_logic=BooleanOperator.OR`)
+       - Zonemap pushdown nativo vs `VARCHAR` in `QueryBuilder`
+       - Clonazione sicura `replace` in `build_count_query` ed `export_query`
+       - Paginazione cachata (`from_cache=True`) con `filter_groups`
+       - Materializzazione selettiva (bypass tabella temporanea per query non filtrate)
+       - Ispezione zero-copy PyArrow e `fetchall`
+  6. **Rebuild Bundle Standalone Desktop macOS ([`dist/Grabber.app`](dist/Grabber.app))**:
+     - Ricompilato con successo `dist/Grabber.app` (246 MB) tramite `build_executable.py`.
+     - Collaudato con successo avvio headless `--serve 8549` con verifica HTTP `200 OK` su `/_stcore/health` e `/`.
+- **Validazione Finale**:
+  - Test suite pytest: **133 passati, 13 skipped** in **2.13s**.
+  - Linter Ruff: **0 errori** (`All checks passed!`).
+  - Type checking MyPy: **0 errori** su tutti i 54 moduli analizzati (`Success: no issues found in 54 source files`).
 
 

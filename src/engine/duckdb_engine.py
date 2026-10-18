@@ -12,6 +12,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -313,13 +314,13 @@ class DuckDBEngine(IQueryEngine):
 
         # Update current schema column metadata with full unified schema
         try:
-            describe_df = self.conn.execute(f"DESCRIBE {self.current_view_name}").fetchdf()
+            describe_rows = self.conn.execute(f"DESCRIBE {self.current_view_name}").fetchall()
             new_columns = []
-            for _, row in describe_df.iterrows():
-                col_name = str(row["column_name"])
-                native_type = str(row["column_type"]).upper()
+            for row in describe_rows:
+                col_name = str(row[0])
+                native_type = str(row[1]).upper()
                 is_interval = "INTERVAL" in native_type
-                is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT", "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT", "REAL", "NUMERIC"])
                 data_type = DataType.NUMERIC if is_num else (
                     DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
                 )
@@ -382,13 +383,13 @@ class DuckDBEngine(IQueryEngine):
             self.current_schema.row_count_estimate = count_res[0]
 
         try:
-            describe_df = self.conn.execute(f"DESCRIBE {self.current_view_name}").fetchdf()
+            describe_rows = self.conn.execute(f"DESCRIBE {self.current_view_name}").fetchall()
             new_columns = []
-            for _, row in describe_df.iterrows():
-                col_name = str(row["column_name"])
-                native_type = str(row["column_type"]).upper()
+            for row in describe_rows:
+                col_name = str(row[0])
+                native_type = str(row[1]).upper()
                 is_interval = "INTERVAL" in native_type
-                is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL"])
+                is_num = not is_interval and any(t in native_type for t in ["INT", "BIGINT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "TINYINT", "SMALLINT", "UBIGINT", "UINTEGER", "USMALLINT", "UTINYINT", "REAL", "NUMERIC"])
                 data_type = DataType.NUMERIC if is_num else (
                     DataType.DATE if any(d in native_type for d in ["DATE", "TIMESTAMP"]) else DataType.TEXT
                 )
@@ -434,20 +435,35 @@ class DuckDBEngine(IQueryEngine):
                     logger.warning("Errore lettura cache query temporanea (%s); rigenerazione...", e)
                     self.clear_query_cache()
 
+            # Selective materialization check:
+            # If query has no filters, no search, no grouping, and no order_by,
+            # execute the paginated slice directly on table_ref without full temp table materialization.
+            if not spec.has_filters_or_grouping and not spec.order_by:
+                t0 = time.time()
+                page_sql = QueryBuilder.build_select_query(table_ref, spec, schema_cols)
+                cursor = self._execute_sql(page_sql)
+                elapsed = time.time() - t0
+                table = cursor.to_arrow_table()
+
+                total_rows = (
+                    self.current_schema.row_count_estimate
+                    if self.current_schema.row_count_estimate is not None
+                    else self.count_matching_rows(spec)
+                )
+                self._active_query_fingerprint = base_fp
+                self._active_query_total_count = total_rows
+
+                return QueryResult(
+                    columns=table.column_names,
+                    total_matching_rows=total_rows,
+                    execution_time_seconds=round(elapsed, 4),
+                    is_aggregated=is_agg,
+                    table=table,
+                    from_cache=False,
+                )
+
             # Cache miss: materialize base query into temporary table
-            base_spec = QuerySpec(
-                filters=spec.filters,
-                filter_logic=spec.filter_logic,
-                global_search=spec.global_search,
-                global_search_columns=spec.global_search_columns,
-                global_search_logic=spec.global_search_logic,
-                selected_columns=spec.selected_columns,
-                group_by_columns=spec.group_by_columns,
-                aggregations=spec.aggregations,
-                order_by=spec.order_by,
-                limit=None,
-                offset=None,
-            )
+            base_spec = replace(spec, limit=None, offset=None)
             base_sql = QueryBuilder.build_select_query(table_ref, base_spec, schema_cols)
 
             t0 = time.time()
